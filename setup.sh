@@ -35,13 +35,24 @@ echo "✓ System updated"
 echo ""
 echo "[2/6] Installing system dependencies..."
 
+# Core Python dependencies
+sudo apt install -y \
+    python3-pip \
+    python3-dev \
+    python3-venv \
+    build-essential
+
 # OpenCV dependencies
 sudo apt install -y \
     python3-opencv \
-    libopencv-dev \
-    python3-pip \
-    python3-dev \
-    build-essential
+    libopencv-dev
+
+# Camera dependencies for Raspberry Pi 5 (libcamera)
+sudo apt install -y \
+    libcamera-apps \
+    libcamera-dev \
+    python3-picamera2 \
+    python3-libcamera
 
 # GPIO library for Raspberry Pi 5
 sudo apt install -y python3-lgpio python3-rpi-lgpio
@@ -72,17 +83,32 @@ echo "✓ System dependencies installed"
 echo ""
 echo "[3/6] Enabling hardware interfaces..."
 
-# Enable camera (if not already enabled)
-if ! grep -q "start_x=1" /boot/config.txt 2>/dev/null; then
-    echo "start_x=1" | sudo tee -a /boot/config.txt > /dev/null
-    echo "gpu_mem=128" | sudo tee -a /boot/config.txt > /dev/null
+# Raspberry Pi 5 uses /boot/firmware/config.txt instead of /boot/config.txt
+BOOT_CONFIG="/boot/firmware/config.txt"
+if [ ! -f "$BOOT_CONFIG" ]; then
+    BOOT_CONFIG="/boot/config.txt"  # Fallback for older Pi models
 fi
 
-# Add user to gpio and video groups
-sudo usermod -a -G gpio,video $USER
+# Enable camera interface for Raspberry Pi 5 (uses libcamera)
+if [ -f "$BOOT_CONFIG" ]; then
+    # For Pi 5, camera is enabled by default with libcamera
+    # Ensure GPU memory is adequate
+    if ! grep -q "gpu_mem" "$BOOT_CONFIG" 2>/dev/null; then
+        echo "gpu_mem=128" | sudo tee -a "$BOOT_CONFIG" > /dev/null
+        echo "✓ Camera memory allocated"
+    fi
+    
+    # Enable I2C if needed
+    if ! grep -q "dtparam=i2c_arm=on" "$BOOT_CONFIG" 2>/dev/null; then
+        echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
+    fi
+fi
+
+# Add user to required groups for Raspberry Pi 5
+sudo usermod -a -G gpio,video,i2c $USER
 
 echo "✓ Hardware interfaces enabled"
-echo "  Note: You may need to reboot for group changes to take effect"
+echo "  Note: You may need to reboot for changes to take effect"
 
 # ========================================
 # STEP 4: Install Python Packages
@@ -91,16 +117,26 @@ echo "  Note: You may need to reboot for group changes to take effect"
 echo ""
 echo "[4/6] Installing Python packages..."
 
+# Create virtual environment with access to system packages (for GPIO and camera)
+if [ ! -d "venv" ]; then
+    echo "Creating virtual environment..."
+    python3 -m venv --system-site-packages venv
+    echo "✓ Virtual environment created with system-site-packages"
+fi
+
+# Activate virtual environment
+source venv/bin/activate
+
 # Upgrade pip
 python3 -m pip install --upgrade pip
 
 # Install from requirements.txt
 if [ -f "requirements.txt" ]; then
-    pip3 install -r requirements.txt
+    pip install -r requirements.txt
     echo "✓ Python packages installed from requirements.txt"
 else
     # Fallback: install essential packages manually
-    pip3 install fastapi uvicorn[standard] numpy scikit-learn websockets python-multipart
+    pip install fastapi uvicorn[standard] numpy scikit-learn websockets python-multipart
     echo "✓ Essential Python packages installed"
     echo "  ⚠ requirements.txt not found, installed core packages only"
 fi
@@ -192,7 +228,7 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/python3 run.py
+ExecStart=$(pwd)/venv/bin/python run.py
 Restart=always
 RestartSec=10
 
@@ -228,11 +264,12 @@ echo "✓ Setup Complete!"
 echo "========================================="
 echo ""
 echo "Next steps:"
-echo "  1. Reboot to apply group changes: sudo reboot"
-echo "  2. Test camera: python3 tests/vision_debug.py"
-echo "  3. Test hardware: python3 tests/test_hardware_controller.py"
-echo "  4. Run system: python3 run.py"
-echo "  5. Access dashboard: http://raspberrypi.local:8000"
+echo "  1. Reboot to apply changes: sudo reboot"
+echo "  2. Activate virtual environment: source venv/bin/activate"
+echo "  3. Test camera: python tests/vision_debug.py"
+echo "  4. Test hardware: python tests/test_hardware_controller.py"
+echo "  5. Run system: python run.py"
+echo "  6. Access dashboard: http://raspberrypi.local:8000"
 echo ""
 echo "Configuration files:"
 echo "  - config/camera_config.json"
