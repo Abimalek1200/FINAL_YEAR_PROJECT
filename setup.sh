@@ -47,6 +47,13 @@ sudo apt install -y \
     python3-opencv \
     libopencv-dev
 
+# Scientific computing packages (pre-built, avoids compilation)
+sudo apt install -y \
+    python3-numpy \
+    python3-scipy \
+    python3-sklearn \
+    python3-pil
+
 # Camera dependencies for Raspberry Pi 5 (libcamera)
 sudo apt install -y \
     libcamera-apps \
@@ -127,13 +134,23 @@ fi
 # Activate virtual environment
 source venv/bin/activate
 
-# Upgrade pip
-python3 -m pip install --upgrade pip
+# Upgrade pip with SSL workaround for piwheels
+python3 -m pip install --upgrade pip --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host www.piwheels.org
 
-# Install from requirements.txt
+# Install from requirements.txt (skip packages already installed via apt)
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt
+    # Create temporary requirements without system packages
+    grep -v "^numpy" requirements.txt | \
+    grep -v "^opencv-python" | \
+    grep -v "^scipy" | \
+    grep -v "^scikit-learn" | \
+    grep -v "^Pillow" > requirements_filtered.txt
+    
+    # Install remaining packages with SSL workaround
+    pip install -r requirements_filtered.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host www.piwheels.org
+    rm requirements_filtered.txt
     echo "✓ Python packages installed from requirements.txt"
+    echo "  (numpy, opencv, scipy, sklearn, pillow from system packages)"
 else
     # Fallback: install essential packages manually
     pip install fastapi uvicorn[standard] numpy scikit-learn websockets python-multipart
