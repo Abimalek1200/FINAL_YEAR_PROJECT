@@ -166,9 +166,16 @@ echo ""
 echo "[5/6] Creating project directories..."
 
 # Create directories if they don't exist
-mkdir -p config data logs snapshots tests
+mkdir -p config data logs snapshots tests models
 
-# Create default config files if they don't exist
+echo "Creating configuration files..."
+echo ""
+
+# Counter for created files
+CREATED_COUNT=0
+SKIPPED_COUNT=0
+
+# 1. Camera Configuration
 if [ ! -f "config/camera_config.json" ]; then
     cat > config/camera_config.json << 'EOF'
 {
@@ -178,9 +185,14 @@ if [ ! -f "config/camera_config.json" ]; then
   "device_id": 0
 }
 EOF
-    echo "✓ Created config/camera_config.json"
+    echo "  ✓ Created config/camera_config.json"
+    CREATED_COUNT=$((CREATED_COUNT + 1))
+else
+    echo "  - config/camera_config.json (already exists)"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
 fi
 
+# 2. Control Configuration
 if [ ! -f "config/control_config.json" ]; then
     cat > config/control_config.json << 'EOF'
 {
@@ -209,9 +221,14 @@ if [ ! -f "config/control_config.json" ]; then
   "estop_pin": 22
 }
 EOF
-    echo "✓ Created config/control_config.json"
+    echo "  ✓ Created config/control_config.json"
+    CREATED_COUNT=$((CREATED_COUNT + 1))
+else
+    echo "  - config/control_config.json (already exists)"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
 fi
 
+# 3. Vision Configuration
 if [ ! -f "config/vision_config.json" ]; then
     cat > config/vision_config.json << 'EOF'
 {
@@ -223,9 +240,68 @@ if [ ! -f "config/vision_config.json" ]; then
   "morphology_kernel": 3
 }
 EOF
-    echo "✓ Created config/vision_config.json"
+    echo "  ✓ Created config/vision_config.json"
+    CREATED_COUNT=$((CREATED_COUNT + 1))
+else
+    echo "  - config/vision_config.json (already exists)"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
 fi
 
+# 4. System Configuration (for run.py)
+if [ ! -f "config/system_config.json" ]; then
+    cat > config/system_config.json << 'EOF'
+{
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "reload": false
+  },
+  "logging": {
+    "level": "INFO",
+    "max_file_size_mb": 10,
+    "backup_count": 5
+  },
+  "data_retention": {
+    "retention_days": 7,
+    "cleanup_interval_hours": 24
+  },
+  "safety": {
+    "max_pump_duty": 80,
+    "vision_timeout_seconds": 5,
+    "emergency_stop_enabled": true
+  }
+}
+EOF
+    echo "  ✓ Created config/system_config.json"
+    CREATED_COUNT=$((CREATED_COUNT + 1))
+else
+    echo "  - config/system_config.json (already exists)"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+fi
+
+# 5. ML Configuration (optional)
+if [ ! -f "config/ml_config.json" ]; then
+    cat > config/ml_config.json << 'EOF'
+{
+  "anomaly_detector": {
+    "enabled": false,
+    "contamination": 0.1,
+    "training_samples_required": 100,
+    "model_path": "models/anomaly_detector.pkl"
+  }
+}
+EOF
+    echo "  ✓ Created config/ml_config.json"
+    CREATED_COUNT=$((CREATED_COUNT + 1))
+else
+    echo "  - config/ml_config.json (already exists)"
+    SKIPPED_COUNT=$((SKIPPED_COUNT + 1))
+fi
+
+echo ""
+echo "Configuration Summary:"
+echo "  Created: $CREATED_COUNT file(s)"
+echo "  Skipped: $SKIPPED_COUNT file(s) (already exist)"
 echo "✓ Project structure created"
 
 # ========================================
@@ -289,9 +365,11 @@ echo "  5. Run system: python run.py"
 echo "  6. Access dashboard: http://raspberrypi.local:8000"
 echo ""
 echo "Configuration files:"
-echo "  - config/camera_config.json"
-echo "  - config/control_config.json"
-echo "  - config/vision_config.json"
+echo "  - config/camera_config.json      (Camera settings)"
+echo "  - config/control_config.json     (Hardware & PI controller)"
+echo "  - config/vision_config.json      (Bubble detection)"
+echo "  - config/system_config.json      (API & logging)"
+echo "  - config/ml_config.json          (Machine learning)"
 echo ""
 echo "For help, see README.md and STUDENT_GUIDE.md"
 echo ""
