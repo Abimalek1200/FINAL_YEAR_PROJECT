@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         # Initialize vision processor
         logger.info("Initializing vision processor...")
         from ..vision.vision_processor import VisionProcessor
-        system_state['vision_processor'] = VisionProcessor(width=640, height=480, fps=10)
+        system_state['vision_processor'] = VisionProcessor(frame_width=640, frame_height=480, camera_fps=10)
         logger.info("✓ Vision processor initialized")
         
         # Initialize hardware controller
