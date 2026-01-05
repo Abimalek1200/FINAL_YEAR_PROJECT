@@ -141,10 +141,12 @@ app.add_middleware(
 app.include_router(routes.router, prefix="/api")
 app.include_router(websocket.router)
 
-# Mount static files (dashboard)
+# Mount static files BEFORE the root route
 dashboard_path = "dashboard"
 try:
-    app.mount("/static", StaticFiles(directory=dashboard_path), name="static")
+    # Serve CSS and JS files
+    app.mount("/css", StaticFiles(directory=f"{dashboard_path}/css"), name="css")
+    app.mount("/js", StaticFiles(directory=f"{dashboard_path}/js"), name="js")
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
@@ -153,10 +155,10 @@ except Exception as e:
 async def root():
     """Serve dashboard HTML."""
     try:
-        return FileResponse("dashboard/index.html")
+        return FileResponse(f"{dashboard_path}/index.html")
     except Exception as e:
         logger.error(f"Error serving dashboard: {e}")
-        return {"error": "Dashboard not found"}
+        return {"error": "Dashboard not found", "details": str(e)}
 
 
 def get_system_state():
