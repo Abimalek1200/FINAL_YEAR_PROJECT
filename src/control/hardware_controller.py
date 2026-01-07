@@ -84,11 +84,15 @@ class HardwareController:
     def _set_pwm(self, pin: int, duty_cycle: float) -> bool:
         """Set PWM duty cycle (0-100%)."""
         duty_cycle = max(0.0, min(100.0, duty_cycle))
-        if not GPIO_AVAILABLE or not self.is_initialized:
-            logger.debug(f"Simulation: Pin {pin} = {duty_cycle}%")
+        if not GPIO_AVAILABLE:
+            logger.warning(f"SIMULATION MODE: Pin {pin} = {duty_cycle}% (lgpio not available)")
             return True
+        if not self.is_initialized:
+            logger.error(f"GPIO not initialized! Cannot set Pin {pin} to {duty_cycle}%")
+            return False
         try:
             lgpio.tx_pwm(self.chip, pin, self.PWM_FREQUENCY, duty_cycle)
+            logger.debug(f"GPIO PWM: Pin {pin} = {duty_cycle}% @ {self.PWM_FREQUENCY}Hz")
             return True
         except Exception as e:
             logger.error(f"PWM write failed for pin {pin}: {e}")
@@ -160,6 +164,8 @@ class HardwareController:
     
     def manual_motor_control(self, motor_id: str, pwm_value: float):
         """Control manual motors ('agitator', 'air', 'feed') with PWM (0-100%)."""
+        logger.info(f"Motor control request: {motor_id} = {pwm_value}%")
+        
         if self.estop_triggered:
             logger.warning("Cannot control motors - E-Stop active")
             return
@@ -173,7 +179,12 @@ class HardwareController:
         pin_map = {'agitator': self.PIN_AGITATOR, 'air': self.PIN_AIR_PUMP, 'feed': self.PIN_FEED_PUMP}
         pin = pin_map[motor_id]
         self.motor_states[motor_id] = pwm_value
-        self._set_pwm(pin, pwm_value)
+        success = self._set_pwm(pin, pwm_value)
+        
+        if success:
+            logger.info(f"✓ Motor {motor_id} set to {pwm_value}% (Pin {pin})")
+        else:
+            logger.error(f"✗ Failed to set motor {motor_id} to {pwm_value}%")
     
     def get_status(self) -> Dict:
         """Get current hardware status."""

@@ -262,7 +262,7 @@ class VisionProcessor:
         # Process bubbles
         bubble_data = self.process_bubbles(frame)
         if bubble_data['count'] == 0:
-            logger.warning("No bubbles detected")
+            logger.debug("No bubbles detected")  # Changed to debug to reduce log spam
         
         # Analyze froth
         froth_metrics = self.analyze_froth(frame, bubble_data)
