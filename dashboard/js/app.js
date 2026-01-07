@@ -42,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     startClock();
     startUptimeCounter();
+    startPolling(); // Start periodic API polling as fallback
 });
 
 // ========================================
@@ -210,11 +211,12 @@ function switchMode(mode) {
     document.getElementById('manualControls').style.display = mode === 'manual' ? 'block' : 'none';
     document.getElementById('autoControls').style.display = mode === 'auto' ? 'block' : 'none';
     
-    // Send mode change to backend
-    sendWebSocketMessage({
-        type: 'control',
-        action: 'set_mode',
-        mode: mode
+    // Send mode change to backend via REST API
+    setPumpMode(mode).catch(err => {
+        console.error('Failed to switch pump mode:', err);
+        // Revert UI on error
+        AppState.mode = mode === 'auto' ? 'manual' : 'auto';
+        updateModeDisplay();
     });
     
     addAlert('info', `Switched to ${mode.toUpperCase()} mode`);
@@ -244,13 +246,28 @@ function toggleDevice(device, running) {
     // Update UI
     updateDeviceUI(device);
     
-    // Send command to backend
-    sendWebSocketMessage({
-        type: 'control',
-        action: 'toggle_device',
-        device: device,
-        running: running
-    });
+    // If turning on, apply current slider value via API
+    if (running && device !== 'pump') {
+        const motorMap = { 'agitator': 'agitator', 'air': 'air', 'feed': 'feed' };
+        const motorId = motorMap[device];
+        if (motorId) {
+            const dutyCycle = AppState.devices[device].speed || AppState.devices[device].intensity || 0;
+            controlMotor(motorId, dutyCycle);
+        }
+    } else if (running && device === 'pump') {
+        setPumpSpeed(AppState.devices.pump.speed);
+    } else if (!running) {
+        // Stop motor
+        if (device === 'pump') {
+            setPumpSpeed(0);
+        } else {
+            const motorMap = { 'agitator': 'agitator', 'air': 'air', 'feed': 'feed' };
+            const motorId = motorMap[device];
+            if (motorId) {
+                controlMotor(motorId, 0);
+            }
+        }
+    }
     
     addAlert('info', `${device.charAt(0).toUpperCase() + device.slice(1)} ${running ? 'started' : 'stopped'}`);
 }
@@ -275,17 +292,19 @@ function setupDeviceSlider(device, param) {
             updateDeviceDerivedValues(device, value);
         });
         
-        slider.addEventListener('change', (e) => {
+        slider.addEventListener('change', async (e) => {
             const value = parseInt(e.target.value);
             
-            // Send to backend on release
-            sendWebSocketMessage({
-                type: 'control',
-                action: 'set_device_value',
-                device: device,
-                parameter: param.toLowerCase(),
-                value: value
-            });
+            // Send to backend via REST API
+            if (device === 'pump') {
+                await setPumpSpeed(value);
+            } else {
+                const motorMap = { 'agitator': 'agitator', 'air': 'air', 'feed': 'feed' };
+                const motorId = motorMap[device];
+                if (motorId) {
+                    await controlMotor(motorId, value);
+                }
+            }
         });
     }
 }
@@ -365,17 +384,15 @@ function setupDeviceSliderAuto(device, param) {
             updateDeviceDerivedValuesAuto(device, value);
         });
         
-        slider.addEventListener('change', (e) => {
+        slider.addEventListener('change', async (e) => {
             const value = parseInt(e.target.value);
             
-            // Send to backend on release
-            sendWebSocketMessage({
-                type: 'control',
-                action: 'set_device_value',
-                device: device,
-                parameter: param.toLowerCase(),
-                value: value
-            });
+            // Send to backend via REST API (auto mode motors)
+            const motorMap = { 'agitator': 'agitator', 'air': 'air', 'feed': 'feed' };
+            const motorId = motorMap[device];
+            if (motorId) {
+                await controlMotor(motorId, value);
+            }
         });
     }
 }
@@ -418,10 +435,8 @@ function stopAllDevices() {
 
 function handleEmergencyStop() {
     if (confirm('Are you sure you want to trigger EMERGENCY STOP? This will halt all operations immediately.')) {
-        sendWebSocketMessage({
-            type: 'control',
-            action: 'emergency_stop'
-        });
+        // Call REST API emergency stop endpoint
+        emergencyStop();
         
         // Immediately stop all devices in UI
         stopAllDevices();
@@ -432,10 +447,202 @@ function handleEmergencyStop() {
         document.getElementById('systemStatusPill').style.backgroundColor = 'rgba(231, 76, 60, 0.3)';
         document.getElementById('systemStatusPill').style.color = 'var(--accent-danger)';
         
-        addAlert('error', 'EMERGENCY STOP ACTIVATED');
+        addAlert('error', 'EMERGENCY STOP TRIGGERED - All devices stopped');
     }
 }
 
+// ========================================
+// REST API FUNCTIONS
+// ========================================
+
+/**
+ * Control motors (agitator, air, feed) via REST API
+ */
+async function controlMotor(motorId, dutyCycle) {
+    try {
+        const response = await fetch('/api/motor/control', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                motor_id: motorId,
+                duty_cycle: dutyCycle
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Motor control failed');
+        }
+        
+        const result = await response.json();
+        console.log(`Motor ${motorId} set to ${dutyCycle}%:`, result);
+        return result;
+        
+    } catch (error) {
+        console.error(`Failed to control ${motorId}:`, error);
+        addAlert('error', `Motor control failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Set pump mode (auto or manual)
+ */
+async function setPumpMode(mode) {
+    try {
+        const response = await fetch('/api/pump/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: mode })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Pump mode change failed');
+        }
+        
+        const result = await response.json();
+        console.log(`Pump mode set to ${mode}:`, result);
+        addAlert('success', `Pump mode: ${mode.toUpperCase()}`);
+        return result;
+        
+    } catch (error) {
+        console.error('Failed to set pump mode:', error);
+        addAlert('error', `Pump mode change failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Set pump speed (manual mode only)
+ */
+async function setPumpSpeed(dutyCycle) {
+    try {
+        const response = await fetch('/api/pump/speed', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ duty_cycle: dutyCycle })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Pump speed control failed');
+        }
+        
+        const result = await response.json();
+        console.log(`Pump speed set to ${dutyCycle}%:`, result);
+        return result;
+        
+    } catch (error) {
+        console.error('Failed to set pump speed:', error);
+        addAlert('error', `Pump control failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Update PI controller parameters (auto mode)
+ */
+async function updatePIParameters(kp, ki, setpoint) {
+    try {
+        const params = {};
+        if (kp !== null && kp !== undefined) params.kp = kp;
+        if (ki !== null && ki !== undefined) params.ki = ki;
+        if (setpoint !== null && setpoint !== undefined) params.setpoint = setpoint;
+        
+        const response = await fetch('/api/pi/parameters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(params)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'PI parameter update failed');
+        }
+        
+        const result = await response.json();
+        console.log('PI parameters updated:', result);
+        addAlert('success', 'PI controller updated');
+        return result;
+        
+    } catch (error) {
+        console.error('Failed to update PI parameters:', error);
+        addAlert('error', `PI update failed: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Emergency stop - stops all motors immediately
+ */
+async function emergencyStop() {
+    try {
+        const response = await fetch('/api/emergency-stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Emergency stop failed');
+        }
+        
+        const result = await response.json();
+        console.log('Emergency stop executed:', result);
+        addAlert('error', 'EMERGENCY STOP - All motors halted');
+        return result;
+        
+    } catch (error) {
+        console.error('Emergency stop failed:', error);
+        addAlert('error', `Emergency stop error: ${error.message}`);
+        throw error;
+    }
+}
+
+/**
+ * Fetch current metrics from backend
+ */
+async function fetchMetrics() {
+    try {
+        const response = await fetch('/api/metrics');
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch metrics');
+        }
+        
+        const metrics = await response.json();
+        updateMetrics(metrics);
+        return metrics;
+        
+    } catch (error) {
+        console.error('Failed to fetch metrics:', error);
+        return null;
+    }
+}
+
+/**
+ * Fetch system status from backend
+ */
+async function fetchStatus() {
+    try {
+        const response = await fetch('/api/status');
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch status');
+        }
+        
+        const status = await response.json();
+        updateControlState(status);
+        return status;
+        
+    } catch (error) {
+        console.error('Failed to fetch status:', error);
+        return null;
+    }
+}
+        
+        addAlert('error', 'EMERGENCY STOP ACTIVATED');
 // ========================================
 // DATA UPDATES
 // ========================================
@@ -740,6 +947,26 @@ function startUptimeCounter() {
     }
     
     setInterval(updateUptime, 1000);
+}
+
+/**
+ * Start periodic polling of metrics and status via REST API
+ * Fallback when WebSocket is not available
+ */
+function startPolling() {
+    // Poll metrics every 2 seconds
+    setInterval(async () => {
+        if (!AppState.connected) {
+            await fetchMetrics();
+        }
+    }, 2000);
+    
+    // Poll status every 5 seconds
+    setInterval(async () => {
+        if (!AppState.connected) {
+            await fetchStatus();
+        }
+    }, 5000);
 }
 
 // ========================================
