@@ -44,6 +44,7 @@ class HardwareController:
             self.chip = lgpio.gpiochip_open(0)
             
             for pin in [self.PIN_PERISTALTIC, self.PIN_AGITATOR, self.PIN_AIR_PUMP, self.PIN_FEED_PUMP]:
+                lgpio.gpio_claim_output(self.chip, pin, lgpio.SET_PULL_NONE)
                 lgpio.tx_pwm(self.chip, pin, self.PWM_FREQUENCY, 0)
             
             if self.estop_enabled:
