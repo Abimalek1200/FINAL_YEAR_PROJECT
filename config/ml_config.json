@@ -1,0 +1,8 @@
+{
+  "anomaly_detector": {
+    "enabled": false,
+    "contamination": 0.1,
+    "training_samples_required": 100,
+    "model_path": "models/anomaly_detector.pkl"
+  }
+}

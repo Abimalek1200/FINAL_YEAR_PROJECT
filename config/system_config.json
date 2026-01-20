@@ -1,0 +1,21 @@
+{
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "reload": false
+  },
+  "logging": {
+    "level": "INFO",
+    "max_file_size_mb": 10,
+    "backup_count": 5
+  },
+  "data_retention": {
+    "retention_days": 7,
+    "cleanup_interval_hours": 24
+  },
+  "safety": {
+    "max_pump_duty": 80,
+    "vision_timeout_seconds": 5,
+    "emergency_stop_enabled": true
+  }
+}

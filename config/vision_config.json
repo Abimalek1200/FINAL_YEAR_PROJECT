@@ -1,0 +1,8 @@
+{
+  "min_bubble_area": 80,
+  "max_bubble_area": 5000,
+  "distance_threshold": 0.125,
+  "min_circularity": 0.45,
+  "gaussian_blur_kernel": 5,
+  "morphology_kernel": 3
+}

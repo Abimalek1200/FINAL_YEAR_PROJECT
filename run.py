@@ -82,7 +82,7 @@ def check_prerequisites():
     # Check camera availability
     try:
         import cv2
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(1)
         if not cap.isOpened():
             logger.warning("Camera not detected - will continue but vision features disabled")
         else:

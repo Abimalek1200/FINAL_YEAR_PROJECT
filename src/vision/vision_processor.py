@@ -19,7 +19,7 @@ class VisionProcessor:
     
     def __init__(
         self,
-        camera_id: int = 0,
+        camera_id: int = 1,
         frame_width: int = 640,
         frame_height: int = 480,
         camera_fps: int = 30,
