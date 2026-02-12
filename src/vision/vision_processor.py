@@ -19,37 +19,40 @@ class VisionProcessor:
     
     def __init__(
         self,
-        camera_id: int = 1,
+        camera_id: int = 0,
         frame_width: int = 640,
         frame_height: int = 480,
         camera_fps: int = 30,
         camera_retries: int = 5,
-        blur_kernel: Tuple[int, int] = (1, 1),
-        morph_kernel: Tuple[int, int] = (1, 1),
-        opening_iterations: int = 2,
-        closing_iterations: int = 4,
-        min_bubble_area: int = 80,
-        distance_threshold: float = 0.125,
-        circularity_threshold: float = 0.45,
-        watershed_dilations: int = 3,
+        blur_kernel_size: int = 5,
+        morph_kernel_size: int = 3,
+        min_bubble_area: int = 150,
+        max_bubble_area: int = 11000,
+        circularity_threshold: float = 0.2,
         history_size: int = 10
     ):
-        """Initialize with all vision parameters from copilot-instructions.md config."""
+        """Initialize with contour detection parameters."""
         self.camera_id, self.frame_width, self.frame_height = camera_id, frame_width, frame_height
         self.camera_fps, self.camera_retries = camera_fps, camera_retries
-        self.blur_kernel, self.morph_kernel = blur_kernel, morph_kernel
-        self.opening_iterations, self.closing_iterations = opening_iterations, closing_iterations
-        self.min_bubble_area, self.distance_threshold = min_bubble_area, distance_threshold
-        self.circularity_threshold, self.watershed_dilations = circularity_threshold, watershed_dilations
+        
+        # Contour detection parameters
+        self.blur_kernel_size = blur_kernel_size
+        self.morph_kernel_size = morph_kernel_size
+        self.min_bubble_area = min_bubble_area
+        self.max_bubble_area = max_bubble_area
+        self.circularity_threshold = circularity_threshold
         
         self.cap: Optional[cv.VideoCapture] = None
         self.is_camera_open = False
-        self.morph_kernel_elem = cv.getStructuringElement(cv.MORPH_ELLIPSE, morph_kernel)
-        self.watershed_kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, (1, 1))
         self.bubble_count_history = deque(maxlen=history_size)
         self.avg_size_history = deque(maxlen=history_size)
         
-        logger.info("VisionProcessor initialized")
+        # Storage for annotation
+        self.last_frame: Optional[np.ndarray] = None
+        self.last_annotated_frame: Optional[np.ndarray] = None
+        self.bubble_centroids: list = []  # [(cx, cy, radius), ...]
+        
+        logger.info("VisionProcessor initialized with contour detection")
     
     def initialize_camera(self) -> bool:
         """Initialize camera with retry logic."""
@@ -102,40 +105,46 @@ class VisionProcessor:
             return False, None
     
     def process_bubbles(self, frame: np.ndarray) -> Dict[str, Any]:
-        """Complete preprocessing and bubble detection pipeline."""
+        """Contour-based bubble detection with morphological processing."""
         if frame is None or frame.size == 0:
             return {'count': 0, 'diameters': [], 'areas': [], 'avg_diameter': 0.0, 'mask': None}
         
         try:
-            # Preprocessing: grayscale → blur → threshold → morphology
+            # Enhanced preprocessing: CLAHE → median blur → Gaussian blur
             gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-            blur = cv.GaussianBlur(gray, self.blur_kernel, 0)
-            _, binary = cv.threshold(blur, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU)
-            opening = cv.morphologyEx(binary, cv.MORPH_OPEN, self.morph_kernel_elem,
-                                     iterations=self.opening_iterations)
-            closing = cv.morphologyEx(opening, cv.MORPH_CLOSE, self.morph_kernel_elem,
-                                     iterations=self.closing_iterations)
             
-            # Watershed segmentation
-            dist = cv.distanceTransform(closing, cv.DIST_L2, 5)
-            _, sure_fg = cv.threshold(dist, self.distance_threshold * dist.max(), 255, 0)
-            sure_fg = np.uint8(sure_fg)
-            sure_bg = cv.dilate(closing, self.watershed_kernel, iterations=self.watershed_dilations)
-            unknown = cv.subtract(sure_bg, sure_fg)
+            # CLAHE for contrast enhancement
+            clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(gray)
             
-            ret, markers = cv.connectedComponents(sure_fg)
-            markers = markers + 1
-            markers[unknown == 255] = 0
-            markers_ws = markers.copy()
-            cv.watershed(cv.cvtColor(frame, cv.COLOR_BGR2RGB), markers_ws)
+            # Median blur to reduce noise
+            median = cv.medianBlur(enhanced, 5)
             
-            # Extract bubble mask
-            mask = np.zeros_like(closing, dtype=np.uint8)
-            mask[markers_ws > 1] = 255
+            # Gaussian blur for smoothing
+            blur = cv.GaussianBlur(median, (self.blur_kernel_size, self.blur_kernel_size), 0)
             
-            # Contour analysis
-            contours, _ = cv.findContours(mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            # Adaptive thresholding for better bubble separation
+            binary = cv.adaptiveThreshold(
+                blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv.THRESH_BINARY_INV, 11, 2
+            )
+            
+            # Morphological operations to clean up
+            kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, 
+                                             (self.morph_kernel_size, self.morph_kernel_size))
+            opening = cv.morphologyEx(binary, cv.MORPH_OPEN, kernel, iterations=2)
+            closing = cv.morphologyEx(opening, cv.MORPH_CLOSE, kernel, iterations=2)
+            
+            # Find contours
+            contours, _ = cv.findContours(closing, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            
+            # Analyze contours
             bubbles = self._analyze_contours(contours)
+            
+            # Create mask from valid contours
+            mask = np.zeros_like(gray, dtype=np.uint8)
+            for cx, cy, radius in self.bubble_centroids:
+                cv.circle(mask, (cx, cy), radius, 255, -1)
             
             return {
                 'count': bubbles['count'],
@@ -149,25 +158,45 @@ class VisionProcessor:
             return {'count': 0, 'diameters': [], 'areas': [], 'avg_diameter': 0.0, 'mask': None}
     
     def _analyze_contours(self, contours) -> Dict[str, Any]:
-        """Filter and extract metrics from contours."""
+        """Analyze contours with area and circularity filtering."""
         diameters, areas = [], []
+        centroids = []  # Store (cx, cy, radius) for annotation
         
         for cnt in contours:
+            # Calculate area
             area = cv.contourArea(cnt)
-            if area < self.min_bubble_area:
+            
+            # Filter by area range
+            if area < self.min_bubble_area or area > self.max_bubble_area:
                 continue
             
-            peri = cv.arcLength(cnt, True)
-            if peri <= 0:
+            # Calculate perimeter and circularity
+            perimeter = cv.arcLength(cnt, True)
+            if perimeter == 0:
                 continue
             
-            circularity = 4 * np.pi * area / (peri * peri)
+            circularity = 4 * np.pi * area / (perimeter * perimeter)
+            
+            # Filter by circularity (how round it is)
             if circularity < self.circularity_threshold:
                 continue
             
-            diameter = 2.0 * np.sqrt(area / np.pi)
-            diameters.append(diameter)
-            areas.append(area)
+            # Calculate equivalent circle diameter and radius
+            diameter = np.sqrt(4 * area / np.pi)
+            radius = int(diameter / 2)
+            
+            # Get centroid using moments
+            M = cv.moments(cnt)
+            if M['m00'] != 0:
+                cx = int(M['m10'] / M['m00'])
+                cy = int(M['m01'] / M['m00'])
+                centroids.append((cx, cy, radius))
+                
+                diameters.append(diameter)
+                areas.append(area)
+        
+        # Store centroids for annotation
+        self.bubble_centroids = centroids
         
         return {
             'count': len(diameters),
@@ -175,6 +204,33 @@ class VisionProcessor:
             'areas': areas,
             'avg_diameter': float(np.mean(diameters)) if diameters else 0.0
         }
+    
+    def annotate_frame(self, frame: np.ndarray, count: int, avg_size: float) -> np.ndarray:
+        """Draw circular boundaries on bubbles (like test_2.py annotate_image)."""
+        if frame is None or frame.size == 0:
+            return frame
+        
+        output = frame.copy()
+        GREEN = (0, 255, 0)
+        
+        # Draw circular outline for each bubble
+        for cx, cy, radius in self.bubble_centroids:
+            cv.circle(output, (cx, cy), radius, GREEN, 2)
+        
+        # Add legend panel (like test_2.py add_legend)
+        panel = np.ones((100, 280, 3), dtype=np.uint8) * 240
+        cv.rectangle(panel, (0, 0), (279, 99), (0, 0, 0), 2)
+        cv.putText(panel, "BUBBLE DETECTION", (10, 25),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv.LINE_AA)
+        cv.putText(panel, f"Count: {count}", (15, 55),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
+        cv.putText(panel, f"Avg Size: {avg_size:.1f} px2", (15, 80),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
+        
+        # Overlay panel on frame (top-left corner)
+        output[10:110, 10:290] = panel
+        
+        return output
     
     def analyze_froth(self, frame: np.ndarray, bubble_data: Dict[str, Any]) -> Dict[str, float]:
         """Calculate froth metrics from bubble data."""
@@ -259,6 +315,9 @@ class VisionProcessor:
                 'timestamp': timestamp, 'success': False
             }
         
+        # Store original frame
+        self.last_frame = frame.copy()
+        
         # Process bubbles
         bubble_data = self.process_bubbles(frame)
         if bubble_data['count'] == 0:
@@ -269,7 +328,23 @@ class VisionProcessor:
         froth_metrics['timestamp'] = timestamp
         froth_metrics['success'] = True
         
+        # Create annotated frame (with circular boundaries)
+        # Use avg_bubble_size (area) to match dashboard metrics
+        self.last_annotated_frame = self.annotate_frame(
+            frame, 
+            froth_metrics['bubble_count'],
+            froth_metrics['avg_bubble_size']
+        )
+        
         return froth_metrics
+    
+    def get_annotated_frame(self) -> Optional[np.ndarray]:
+        """Get last annotated frame with circular bubble boundaries.
+        
+        Returns:
+            Annotated frame or None if no frame available
+        """
+        return self.last_annotated_frame
     
     def release(self):
         """Release camera resources."""

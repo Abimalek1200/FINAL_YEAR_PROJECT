@@ -73,7 +73,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def stream_frames(websocket: WebSocket, state: dict):
-    """Stream video frames at 10 FPS."""
+    """Stream annotated video frames at 10 FPS with circular bubble boundaries."""
     vision = state['vision_processor']
     
     while True:
@@ -82,10 +82,11 @@ async def stream_frames(websocket: WebSocket, state: dict):
                 await asyncio.sleep(1)
                 continue
             
-            success, frame = vision.capture_frame()
+            # Get annotated frame (with circular boundaries drawn)
+            frame = vision.get_annotated_frame()
             
-            if success and frame is not None:
-                # Encode as JPEG
+            if frame is not None:
+                # Encode as JPEG (quality 70 for bandwidth efficiency)
                 _, buffer = cv.imencode('.jpg', frame, [cv.IMWRITE_JPEG_QUALITY, 70])
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
                 
@@ -94,7 +95,7 @@ async def stream_frames(websocket: WebSocket, state: dict):
                     "image": frame_base64
                 }, websocket)
             
-            await asyncio.sleep(0.1)  # 10 FPS
+            await asyncio.sleep(0.2)  # 5 FPS matching processing rate
             
         except asyncio.CancelledError:
             break
@@ -104,7 +105,7 @@ async def stream_frames(websocket: WebSocket, state: dict):
 
 
 async def stream_metrics(websocket: WebSocket, state: dict):
-    """Stream metrics at 1 Hz."""
+    """Stream metrics at 5 FPS matching vision processing rate."""
     while True:
         try:
             metrics = state['current_metrics']
@@ -114,7 +115,7 @@ async def stream_metrics(websocket: WebSocket, state: dict):
                 "data": metrics
             }, websocket)
             
-            await asyncio.sleep(1.0)  # 1 Hz
+            await asyncio.sleep(0.2)  # 5 FPS (200ms) matching vision processing
             
         except asyncio.CancelledError:
             break

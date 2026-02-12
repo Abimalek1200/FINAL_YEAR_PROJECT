@@ -94,7 +94,7 @@ async def vision_loop():
                 }
                 system_state['current_metrics']['pump_duty'] = system_state['hardware_controller'].pump_duty
             
-            await asyncio.sleep(0.5)  # 2 Hz update rate
+            await asyncio.sleep(0.2)  # 5 FPS processing rate
         except Exception as e:
             logger.error(f"Vision loop error: {e}")
             await asyncio.sleep(1)
