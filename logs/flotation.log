@@ -38010,3 +38010,270 @@
 2026-02-12 10:10:25,509 - src.api.websocket - ERROR - Send error: no close frame received or sent
 2026-02-12 10:10:25,509 - src.api.websocket - INFO - Client disconnected
 2026-02-12 10:10:25,509 - src.api.websocket - INFO - Client disconnected. Total: 1
+2026-02-12 10:20:30,695 - src.api.websocket - INFO - Client connected. Total: 2
+2026-02-12 10:20:32,243 - src.control.hardware_controller - INFO - MANUAL mode activated
+2026-02-12 10:20:32,425 - src.api.websocket - INFO - Client connected. Total: 3
+2026-02-12 10:21:19,632 - src.api.websocket - ERROR - Send error: no close frame received or sent
+2026-02-12 10:21:19,634 - src.api.websocket - ERROR - Send error: no close frame received or sent
+2026-02-12 10:21:19,634 - src.api.websocket - INFO - Client disconnected
+2026-02-12 10:21:19,634 - src.api.websocket - INFO - Client disconnected. Total: 2
+2026-02-12 10:24:27,028 - src.api.websocket - ERROR - Send error: sent 1012 (service restart); no close frame received
+2026-02-12 10:24:27,028 - src.api.websocket - INFO - Client disconnected
+2026-02-12 10:24:27,028 - src.api.websocket - INFO - Client disconnected. Total: 1
+2026-02-12 10:24:45,444 - src.api.websocket - ERROR - Send error: sent 1012 (service restart); no close frame received
+2026-02-12 10:24:45,444 - src.api.websocket - INFO - Client disconnected
+2026-02-12 10:24:45,444 - src.api.websocket - INFO - Client disconnected. Total: 0
+2026-02-12 10:24:45,522 - src.api.main - INFO - Shutting down...
+2026-02-12 10:24:45,522 - src.control.hardware_controller - INFO - Cleaning up GPIO resources
+2026-02-12 10:24:45,522 - src.control.hardware_controller - INFO - Stopping all devices
+2026-02-12 10:24:45,623 - src.control.hardware_controller - INFO - GPIO resources released
+2026-02-12 10:24:45,632 - src.api.main - INFO - ✓ Shutdown complete
+2026-02-12 10:24:45,633 - __main__ - INFO - Flotation Control System stopped
+2026-02-12 10:24:58,202 - __main__ - INFO - ============================================================
+2026-02-12 10:24:58,202 - __main__ - INFO - Flotation Control System Starting
+2026-02-12 10:24:58,202 - __main__ - INFO - ============================================================
+2026-02-12 10:24:58,203 - __main__ - INFO - Checking system prerequisites...
+2026-02-12 10:25:02,685 - __main__ - INFO - ✓ lgpio GPIO access verified
+2026-02-12 10:25:02,929 - __main__ - INFO - Camera detected successfully
+2026-02-12 10:25:02,930 - __main__ - INFO - All prerequisites met ✓
+2026-02-12 10:25:02,996 - __main__ - INFO - Starting web server on 0.0.0.0:8000
+2026-02-12 10:25:02,996 - __main__ - INFO - Dashboard URL: http://localhost:8000
+2026-02-12 10:25:02,996 - __main__ - INFO - Press Ctrl+C to stop
+2026-02-12 10:25:03,150 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:03,151 - src.api.main - INFO - FLOTATION CONTROL SYSTEM - STARTING
+2026-02-12 10:25:03,151 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:03,151 - src.api.main - INFO - Initializing vision processor...
+2026-02-12 10:25:03,162 - src.vision.vision_processor - INFO - VisionProcessor initialized with contour detection
+2026-02-12 10:25:03,162 - src.api.main - INFO - ✓ Vision processor initialized
+2026-02-12 10:25:03,162 - src.api.main - INFO - Initializing hardware controller...
+2026-02-12 10:25:03,165 - src.control.hardware_controller - INFO - GPIO initialized successfully
+2026-02-12 10:25:03,165 - src.api.main - INFO - ✓ Hardware controller initialized
+2026-02-12 10:25:03,165 - src.api.main - INFO - ✓ System startup complete
+2026-02-12 10:25:06,427 - src.vision.vision_processor - INFO - Camera initialized successfully
+2026-02-12 10:25:06,477 - __main__ - INFO - Flotation Control System stopped
+2026-02-12 10:25:06,720 - src.control.hardware_controller - INFO - Cleaning up GPIO resources
+2026-02-12 10:25:06,720 - src.control.hardware_controller - INFO - Stopping all devices
+2026-02-12 10:25:06,821 - src.control.hardware_controller - INFO - GPIO resources released
+2026-02-12 10:25:17,137 - __main__ - INFO - ============================================================
+2026-02-12 10:25:17,156 - __main__ - INFO - Flotation Control System Starting
+2026-02-12 10:25:17,156 - __main__ - INFO - ============================================================
+2026-02-12 10:25:17,156 - __main__ - INFO - Checking system prerequisites...
+2026-02-12 10:25:31,579 - __main__ - INFO - ✓ lgpio GPIO access verified
+2026-02-12 10:25:31,865 - __main__ - INFO - Camera detected successfully
+2026-02-12 10:25:31,866 - __main__ - INFO - All prerequisites met ✓
+2026-02-12 10:25:31,891 - __main__ - INFO - Starting web server on 0.0.0.0:8000
+2026-02-12 10:25:31,891 - __main__ - INFO - Dashboard URL: http://localhost:8000
+2026-02-12 10:25:31,891 - __main__ - INFO - Press Ctrl+C to stop
+2026-02-12 10:25:31,963 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:31,963 - src.api.main - INFO - FLOTATION CONTROL SYSTEM - STARTING
+2026-02-12 10:25:31,963 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:31,963 - src.api.main - INFO - Initializing vision processor...
+2026-02-12 10:25:31,966 - src.vision.vision_processor - INFO - VisionProcessor initialized with contour detection
+2026-02-12 10:25:31,966 - src.api.main - INFO - ✓ Vision processor initialized
+2026-02-12 10:25:31,966 - src.api.main - INFO - Initializing hardware controller...
+2026-02-12 10:25:31,968 - src.control.hardware_controller - INFO - GPIO initialized successfully
+2026-02-12 10:25:31,968 - src.api.main - INFO - ✓ Hardware controller initialized
+2026-02-12 10:25:31,968 - src.api.main - INFO - ✓ System startup complete
+2026-02-12 10:25:32,985 - src.vision.vision_processor - INFO - Camera initialized successfully
+2026-02-12 10:25:19,142 - __main__ - INFO - ============================================================
+2026-02-12 10:25:19,150 - __main__ - INFO - Flotation Control System Starting
+2026-02-12 10:25:19,150 - __main__ - INFO - ============================================================
+2026-02-12 10:25:19,150 - __main__ - INFO - Checking system prerequisites...
+2026-02-12 10:25:33,680 - __main__ - INFO - ✓ lgpio GPIO access verified
+2026-02-12 10:25:33,979 - __main__ - INFO - Camera detected successfully
+2026-02-12 10:25:33,993 - __main__ - INFO - All prerequisites met ✓
+2026-02-12 10:25:34,178 - __main__ - INFO - Starting web server on 0.0.0.0:8000
+2026-02-12 10:25:34,178 - __main__ - INFO - Dashboard URL: http://localhost:8000
+2026-02-12 10:25:34,178 - __main__ - INFO - Press Ctrl+C to stop
+2026-02-12 10:25:34,892 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:34,892 - src.api.main - INFO - FLOTATION CONTROL SYSTEM - STARTING
+2026-02-12 10:25:34,892 - src.api.main - INFO - ============================================================
+2026-02-12 10:25:34,892 - src.api.main - INFO - Initializing vision processor...
+2026-02-12 10:25:34,938 - src.vision.vision_processor - INFO - VisionProcessor initialized with contour detection
+2026-02-12 10:25:34,938 - src.api.main - INFO - ✓ Vision processor initialized
+2026-02-12 10:25:34,938 - src.api.main - INFO - Initializing hardware controller...
+2026-02-12 10:25:34,984 - src.control.hardware_controller - INFO - GPIO initialized successfully
+2026-02-12 10:25:34,984 - src.api.main - INFO - ✓ Hardware controller initialized
+2026-02-12 10:25:34,984 - src.api.main - INFO - ✓ System startup complete
+2026-02-12 10:25:36,107 - src.vision.vision_processor - INFO - Camera initialized successfully
+2026-02-12 10:25:39,596 - src.control.hardware_controller - INFO - MANUAL mode activated
+2026-02-12 10:25:39,610 - src.api.websocket - INFO - Client connected. Total: 1
+2026-02-13 15:01:08,207 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-02-13 15:01:08,207 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-02-13 15:01:08,208 - src.control.hardware_controller - INFO - Motor control request: air = 0.0%
+2026-02-13 15:01:08,208 - src.control.hardware_controller - INFO - ✓ Motor air set to 0.0% (Pin 14)
+2026-02-13 15:01:08,212 - src.control.hardware_controller - INFO - Motor control request: agitator = 0.0%
+2026-02-13 15:01:08,213 - src.control.hardware_controller - INFO - ✓ Motor agitator set to 0.0% (Pin 13)
+2026-02-13 15:01:27,487 - src.control.hardware_controller - INFO - Motor control request: feed = 64.0%
+2026-02-13 15:01:27,488 - src.control.hardware_controller - INFO - ✓ Motor feed set to 64.0% (Pin 15)
+2026-02-13 15:02:37,898 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-02-13 15:02:37,898 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-02-13 15:02:40,233 - src.control.hardware_controller - INFO - Motor control request: air = 49.0%
+2026-02-13 15:02:40,233 - src.control.hardware_controller - INFO - ✓ Motor air set to 49.0% (Pin 14)
+2026-02-13 15:06:22,743 - src.control.hardware_controller - INFO - AUTO mode - PI reset
+2026-02-13 15:11:54,949 - src.control.hardware_controller - INFO - MANUAL mode activated
+2026-02-13 15:11:58,204 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-02-13 15:11:58,204 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-02-13 15:11:58,205 - src.control.hardware_controller - INFO - Motor control request: air = 0.0%
+2026-02-13 15:11:58,205 - src.control.hardware_controller - INFO - ✓ Motor air set to 0.0% (Pin 14)
+2026-02-13 15:11:58,205 - src.control.hardware_controller - INFO - Motor control request: agitator = 0.0%
+2026-02-13 15:11:58,206 - src.control.hardware_controller - INFO - ✓ Motor agitator set to 0.0% (Pin 13)
+2026-02-13 15:16:57,288 - src.vision.vision_processor - ERROR - Failed to capture frame
+2026-02-13 15:16:57,288 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-02-13 15:17:07,598 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-02-13 15:17:07,599 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-02-13 15:12:19,907 - __main__ - INFO - ============================================================
+2026-02-13 15:12:19,914 - __main__ - INFO - Flotation Control System Starting
+2026-02-13 15:12:19,914 - __main__ - INFO - ============================================================
+2026-02-13 15:12:19,914 - __main__ - INFO - Checking system prerequisites...
+2026-02-13 15:12:34,352 - __main__ - INFO - ✓ lgpio GPIO access verified
+2026-02-13 15:12:34,732 - __main__ - WARNING - Camera not detected - will continue but vision features disabled
+2026-02-13 15:12:34,738 - __main__ - INFO - All prerequisites met ✓
+2026-02-13 15:12:34,810 - __main__ - INFO - Starting web server on 0.0.0.0:8000
+2026-02-13 15:12:34,811 - __main__ - INFO - Dashboard URL: http://localhost:8000
+2026-02-13 15:12:34,811 - __main__ - INFO - Press Ctrl+C to stop
+2026-02-13 15:12:35,203 - src.api.main - INFO - ============================================================
+2026-02-13 15:12:35,203 - src.api.main - INFO - FLOTATION CONTROL SYSTEM - STARTING
+2026-02-13 15:12:35,203 - src.api.main - INFO - ============================================================
+2026-02-13 15:12:35,203 - src.api.main - INFO - Initializing vision processor...
+2026-02-13 15:12:35,252 - src.vision.vision_processor - INFO - VisionProcessor initialized with contour detection
+2026-02-13 15:12:35,252 - src.api.main - INFO - ✓ Vision processor initialized
+2026-02-13 15:12:35,253 - src.api.main - INFO - Initializing hardware controller...
+2026-02-13 15:12:35,282 - src.control.hardware_controller - INFO - GPIO initialized successfully
+2026-02-13 15:12:35,282 - src.api.main - INFO - ✓ Hardware controller initialized
+2026-02-13 15:12:35,282 - src.api.main - INFO - ✓ System startup complete
+2026-02-13 15:12:45,289 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-02-13 15:12:45,289 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:50:48,644 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:50:48,645 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:50:58,850 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:50:58,851 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:51:09,058 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:51:09,058 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:51:19,266 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:51:19,267 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:51:29,475 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:51:29,475 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:51:39,683 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:51:39,684 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:51:49,892 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:51:49,892 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:00,100 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:00,101 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:10,309 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:10,309 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:20,517 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:20,517 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:30,725 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:30,725 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:40,933 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:40,934 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:52:51,143 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:52:51,143 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:01,351 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:01,351 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:01,352 - src.control.hardware_controller - INFO - MANUAL mode activated
+2026-03-08 11:53:01,356 - src.api.websocket - INFO - Client connected. Total: 1
+2026-03-08 11:53:11,560 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:11,560 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:21,769 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:21,769 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:31,978 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:31,978 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:42,186 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:42,187 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:53:52,395 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:53:52,395 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:02,604 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:02,604 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:12,812 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:12,813 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:12,814 - src.control.hardware_controller - INFO - Motor control request: agitator = 0.0%
+2026-03-08 11:54:12,814 - src.control.hardware_controller - INFO - ✓ Motor agitator set to 0.0% (Pin 13)
+2026-03-08 11:54:12,815 - src.control.hardware_controller - INFO - Motor control request: air = 0.0%
+2026-03-08 11:54:12,815 - src.control.hardware_controller - INFO - ✓ Motor air set to 0.0% (Pin 14)
+2026-03-08 11:54:12,816 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-03-08 11:54:12,816 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-03-08 11:54:23,021 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:23,022 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:23,023 - src.control.hardware_controller - INFO - Motor control request: air = 9.0%
+2026-03-08 11:54:23,023 - src.control.hardware_controller - INFO - ✓ Motor air set to 9.0% (Pin 14)
+2026-03-08 11:54:23,023 - src.control.hardware_controller - INFO - Motor control request: air = 62.0%
+2026-03-08 11:54:23,023 - src.control.hardware_controller - INFO - ✓ Motor air set to 62.0% (Pin 14)
+2026-03-08 11:54:33,230 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:33,230 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:33,231 - src.control.hardware_controller - INFO - Motor control request: air = 40.0%
+2026-03-08 11:54:33,231 - src.control.hardware_controller - INFO - ✓ Motor air set to 40.0% (Pin 14)
+2026-03-08 11:54:43,439 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:43,439 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:54:53,647 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:54:53,648 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:03,856 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:03,856 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:14,065 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:14,065 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:24,274 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:24,274 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:34,482 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:34,482 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:44,691 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:44,691 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:55:54,899 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:55:54,899 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:05,108 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:05,108 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:15,317 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:15,317 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:25,525 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:25,526 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:35,734 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:35,734 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:35,736 - src.control.hardware_controller - INFO - Motor control request: feed = 42.0%
+2026-03-08 11:56:35,736 - src.control.hardware_controller - INFO - ✓ Motor feed set to 42.0% (Pin 15)
+2026-03-08 11:56:35,736 - src.control.hardware_controller - INFO - Motor control request: feed = 86.0%
+2026-03-08 11:56:35,737 - src.control.hardware_controller - INFO - ✓ Motor feed set to 86.0% (Pin 15)
+2026-03-08 11:56:45,942 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:45,942 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:56:56,151 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:56:56,151 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:06,359 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:06,360 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:16,568 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:16,568 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:26,777 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:26,777 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:26,778 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-03-08 11:57:26,778 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-03-08 11:57:36,986 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:36,986 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:47,195 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:47,195 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:57:57,403 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:57:57,403 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:07,612 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:07,612 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:17,820 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:17,820 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:28,028 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:28,029 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:38,237 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:38,237 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:48,446 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:48,446 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:58,654 - src.vision.vision_processor - ERROR - Camera init failed after 5 attempts
+2026-03-08 11:58:58,655 - src.vision.vision_processor - ERROR - Frame capture failed, returning defaults
+2026-03-08 11:58:59,858 - src.vision.vision_processor - INFO - Camera initialized successfully
+2026-03-08 12:14:13,489 - src.control.hardware_controller - INFO - Motor control request: air = 7.0%
+2026-03-08 12:14:13,489 - src.control.hardware_controller - INFO - ✓ Motor air set to 7.0% (Pin 14)
+2026-03-08 13:44:08,273 - src.control.hardware_controller - INFO - Motor control request: air = 39.0%
+2026-03-08 13:44:08,273 - src.control.hardware_controller - INFO - ✓ Motor air set to 39.0% (Pin 14)
+2026-03-08 13:44:12,622 - src.control.hardware_controller - INFO - Motor control request: air = 44.0%
+2026-03-08 13:44:12,622 - src.control.hardware_controller - INFO - ✓ Motor air set to 44.0% (Pin 14)
+2026-03-08 15:03:53,010 - src.control.hardware_controller - INFO - Motor control request: feed = 0.0%
+2026-03-08 15:03:53,011 - src.control.hardware_controller - INFO - ✓ Motor feed set to 0.0% (Pin 15)
+2026-03-08 15:03:53,012 - src.control.hardware_controller - INFO - Motor control request: air = 0.0%
+2026-03-08 15:03:53,013 - src.control.hardware_controller - INFO - ✓ Motor air set to 0.0% (Pin 14)
+2026-03-08 15:03:53,015 - src.control.hardware_controller - INFO - Motor control request: agitator = 0.0%
+2026-03-08 15:03:53,015 - src.control.hardware_controller - INFO - ✓ Motor agitator set to 0.0% (Pin 13)
+2026-03-08 15:11:27,476 - src.api.websocket - INFO - Client disconnected
+2026-03-08 15:11:27,479 - src.api.websocket - INFO - Client disconnected. Total: 0

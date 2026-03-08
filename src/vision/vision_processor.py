@@ -205,8 +205,8 @@ class VisionProcessor:
             'avg_diameter': float(np.mean(diameters)) if diameters else 0.0
         }
     
-    def annotate_frame(self, frame: np.ndarray, count: int, avg_size: float) -> np.ndarray:
-        """Draw circular boundaries on bubbles (like test_2.py annotate_image)."""
+    def annotate_frame(self, frame: np.ndarray, count: int, avg_size: float, coverage: float = 0.0) -> np.ndarray:
+        """Draw circular boundaries on bubbles with metrics legend."""
         if frame is None or frame.size == 0:
             return frame
         
@@ -217,18 +217,21 @@ class VisionProcessor:
         for cx, cy, radius in self.bubble_centroids:
             cv.circle(output, (cx, cy), radius, GREEN, 2)
         
-        # Add legend panel (like test_2.py add_legend)
-        panel = np.ones((100, 280, 3), dtype=np.uint8) * 240
-        cv.rectangle(panel, (0, 0), (279, 99), (0, 0, 0), 2)
+        # Add legend panel with 3 metrics
+        panel = np.ones((120, 280, 3), dtype=np.uint8) * 240
+        cv.rectangle(panel, (0, 0), (279, 119), (0, 0, 0), 2)
         cv.putText(panel, "BUBBLE DETECTION", (10, 25),
                    cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv.LINE_AA)
         cv.putText(panel, f"Count: {count}", (15, 55),
                    cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
         cv.putText(panel, f"Avg Size: {avg_size:.1f} px2", (15, 80),
                    cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
+        coverage_pct = int(coverage * 100)
+        cv.putText(panel, f"Coverage: {coverage_pct}%", (15, 105),
+                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
         
         # Overlay panel on frame (top-left corner)
-        output[10:110, 10:290] = panel
+        output[10:130, 10:290] = panel
         
         return output
     
@@ -329,11 +332,12 @@ class VisionProcessor:
         froth_metrics['success'] = True
         
         # Create annotated frame (with circular boundaries)
-        # Use avg_bubble_size (area) to match dashboard metrics
+        # Pass coverage to show in legend
         self.last_annotated_frame = self.annotate_frame(
             frame, 
             froth_metrics['bubble_count'],
-            froth_metrics['avg_bubble_size']
+            froth_metrics['avg_bubble_size'],
+            froth_metrics['froth_coverage']
         )
         
         return froth_metrics
