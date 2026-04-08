@@ -2,6 +2,8 @@
 
 import logging
 import asyncio
+import json
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,8 +12,37 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from . import routes, websocket
+from .metrics_smoothing import TimeWindowMovingAverage
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_PI_KP = 0.5
+DEFAULT_PI_KI = 0.05
+DEFAULT_PI_SETPOINT = 85
+DEFAULT_MAX_PUMP_DUTY = 80.0
+
+
+def _load_control_defaults() -> tuple[float, float, int, float]:
+    """Load PI and pump defaults from config/control_config.json with safe fallbacks."""
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        control_config_path = project_root / "config" / "control_config.json"
+
+        with control_config_path.open("r", encoding="utf-8") as f:
+            cfg = json.load(f)
+
+        pi_cfg = cfg.get("pi_controller", {})
+        pump_cfg = cfg.get("frother_pump", {})
+
+        kp = float(pi_cfg.get("kp", DEFAULT_PI_KP))
+        ki = float(pi_cfg.get("ki", DEFAULT_PI_KI))
+        setpoint = int(pi_cfg.get("setpoint", DEFAULT_PI_SETPOINT))
+        max_duty = float(pump_cfg.get("max_duty_cycle", DEFAULT_MAX_PUMP_DUTY))
+
+        return kp, ki, setpoint, max_duty
+    except Exception as e:
+        logger.warning(f"Could not load control config defaults: {e}. Using built-in defaults.")
+        return DEFAULT_PI_KP, DEFAULT_PI_KI, DEFAULT_PI_SETPOINT, DEFAULT_MAX_PUMP_DUTY
 
 # Global system state
 system_state = {
@@ -27,6 +58,7 @@ system_state = {
         'pump_duty': 0.0,
         'timestamp': ''
     },
+    'bubble_count_ma': TimeWindowMovingAverage(window_seconds=4.0),
     'pump_mode': 'manual',  # 'auto' or 'manual'
     'motor_states': {'agitator': 0.0, 'air': 0.0, 'feed': 0.0}
 }
@@ -40,6 +72,8 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     
     try:
+        pi_kp, pi_ki, pi_setpoint, max_pump_duty = _load_control_defaults()
+
         # Initialize vision processor
         logger.info("Initializing vision processor...")
         from ..vision.vision_processor import VisionProcessor
@@ -50,7 +84,7 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing hardware controller...")
         from ..control.hardware_controller import HardwareController
         system_state['hardware_controller'] = HardwareController(
-            pi_kp=0.5, pi_ki=0.05, pi_setpoint=120, max_pump_duty=80.0
+            pi_kp=pi_kp, pi_ki=pi_ki, pi_setpoint=pi_setpoint, max_pump_duty=max_pump_duty
         )
         logger.info("✓ Hardware controller initialized")
         
@@ -81,13 +115,18 @@ async def lifespan(app: FastAPI):
 
 
 async def vision_loop():
-    """Continuous vision processing loop."""
+    """Continuous vision processing loop with smoothed bubble count publishing."""
     vision = system_state['vision_processor']
+    bubble_count_ma = system_state['bubble_count_ma']
     
     while system_state['running']:
         try:
             metrics = vision.get_metrics()
             if metrics['success']:
+                # Smooth bubble_count over time window before publishing
+                raw_count = metrics.get('bubble_count', 0)
+                metrics['bubble_count'] = bubble_count_ma.update(raw_count)
+
                 # Update current metrics (exclude 'success' flag)
                 system_state['current_metrics'] = {
                     k: v for k, v in metrics.items() if k != 'success'

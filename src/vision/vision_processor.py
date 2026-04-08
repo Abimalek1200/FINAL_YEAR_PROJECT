@@ -206,7 +206,7 @@ class VisionProcessor:
         }
     
     def annotate_frame(self, frame: np.ndarray, count: int, avg_size: float, coverage: float = 0.0) -> np.ndarray:
-        """Draw circular boundaries on bubbles with metrics legend."""
+        """Draw circular boundaries on bubbles."""
         if frame is None or frame.size == 0:
             return frame
         
@@ -216,22 +216,6 @@ class VisionProcessor:
         # Draw circular outline for each bubble
         for cx, cy, radius in self.bubble_centroids:
             cv.circle(output, (cx, cy), radius, GREEN, 2)
-        
-        # Add legend panel with 3 metrics
-        panel = np.ones((120, 280, 3), dtype=np.uint8) * 240
-        cv.rectangle(panel, (0, 0), (279, 119), (0, 0, 0), 2)
-        cv.putText(panel, "BUBBLE DETECTION", (10, 25),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv.LINE_AA)
-        cv.putText(panel, f"Count: {count}", (15, 55),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
-        cv.putText(panel, f"Avg Size: {avg_size:.1f} px2", (15, 80),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
-        coverage_pct = int(coverage * 100)
-        cv.putText(panel, f"Coverage: {coverage_pct}%", (15, 105),
-                   cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv.LINE_AA)
-        
-        # Overlay panel on frame (top-left corner)
-        output[10:130, 10:290] = panel
         
         return output
     

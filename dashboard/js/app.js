@@ -20,7 +20,7 @@ const AppState = {
         anomalyStatus: 'NORMAL'
     },
     piController: {
-        setpoint: 120,
+        setpoint: 85,
         kp: 0.5,
         ki: 0.05,
         output: 0,
@@ -66,6 +66,10 @@ function initializeWebSocket() {
         wsReconnectAttempts = 0;
         updateConnectionStatus('connected', 'Connected');
         addAlert('success', 'WebSocket connection established');
+
+        // Align backend PI setpoint with dashboard state on every (re)connect
+        updatePIParameters(null, null, AppState.piController.setpoint)
+            .catch((error) => console.error('Initial setpoint sync failed:', error));
     };
 
     ws.onmessage = (event) => {
@@ -139,6 +143,12 @@ function sendWebSocketMessage(data) {
 function initializeUI() {
     // Set default mode display
     updateModeDisplay();
+
+    // Initialize target bubble count display from dashboard state
+    const setpointEl = document.getElementById('piSetpointDisplay');
+    if (setpointEl) {
+        setpointEl.textContent = String(AppState.piController.setpoint);
+    }
     
     // Initialize device controls
     updateDeviceUI('pump');
@@ -650,7 +660,7 @@ async function fetchStatus() {
 function updateMetrics(metrics) {
     AppState.metrics = { ...AppState.metrics, ...metrics };
     
-    // Bubble count
+    // Bubble count (2-second smoothed moving average from backend)
     if (metrics.bubble_count !== undefined) {
         document.getElementById('bubbleCount').textContent = metrics.bubble_count;
     }
@@ -681,6 +691,68 @@ function updateControlState(data) {
     
     if (data.pi_error !== undefined) {
         document.getElementById('piError').textContent = data.pi_error.toFixed(1);
+    }
+
+    const setpoint = data?.hardware_status?.pi_controller?.setpoint;
+    if (setpoint !== undefined) {
+        AppState.piController.setpoint = setpoint;
+        const setpointEl = document.getElementById('piSetpointDisplay');
+        if (setpointEl) {
+            setpointEl.textContent = String(setpoint);
+        }
+    }
+
+    // Sync manual motor states from backend so all connected dashboards stay aligned
+    const motorStates = data?.motor_states;
+    if (motorStates) {
+        ['feed', 'air', 'agitator'].forEach((device) => {
+            if (motorStates[device] === undefined) return;
+
+            const duty = Math.max(0, Math.min(100, Number(motorStates[device]) || 0));
+            const isRunning = duty > 0;
+
+            // Update shared app state
+            AppState.devices[device].running = isRunning;
+            if (device === 'agitator') {
+                AppState.devices[device].speed = duty;
+            } else {
+                AppState.devices[device].intensity = duty;
+            }
+
+            // Sync manual panel slider/value
+            const manualParam = device === 'agitator' ? 'Speed' : 'Intensity';
+            const manualSlider = document.getElementById(`${device}${manualParam}`);
+            const manualValue = document.getElementById(`${device}${manualParam}Value`);
+            if (manualSlider) manualSlider.value = String(duty);
+            if (manualValue) manualValue.textContent = String(duty);
+            updateDeviceDerivedValues(device, duty);
+
+            // Sync auto panel slider/value
+            const autoSlider = document.getElementById(`${device}${manualParam}Auto`);
+            const autoValue = document.getElementById(`${device}${manualParam}ValueAuto`);
+            if (autoSlider) autoSlider.value = String(duty);
+            if (autoValue) autoValue.textContent = String(duty);
+            updateDeviceDerivedValuesAuto(device, duty);
+
+            // Sync manual toggle visual
+            updateDeviceUI(device);
+
+            // Sync auto toggle visual
+            const autoToggleBtn = document.getElementById(`${device}ToggleAuto`);
+            const autoStatusDot = autoToggleBtn?.querySelector('.status-dot');
+            const autoStatusText = autoToggleBtn?.querySelector('.status-text');
+
+            if (autoToggleBtn) {
+                autoToggleBtn.classList.toggle('active', isRunning);
+            }
+            if (autoStatusDot) {
+                autoStatusDot.classList.toggle('status-active', isRunning);
+                autoStatusDot.classList.toggle('status-stopped', !isRunning);
+            }
+            if (autoStatusText) {
+                autoStatusText.textContent = isRunning ? 'Running' : 'Stopped';
+            }
+        });
     }
 }
 
@@ -961,12 +1033,10 @@ function startPolling() {
         }
     }, 2000);
     
-    // Poll status every 5 seconds
+    // Poll status every 1 second for cross-client control sync
     setInterval(async () => {
-        if (!AppState.connected) {
-            await fetchStatus();
-        }
-    }, 5000);
+        await fetchStatus();
+    }, 1000);
 }
 
 // ========================================

@@ -20,7 +20,7 @@ class HardwareController:
     PIN_PERISTALTIC, PIN_AGITATOR, PIN_AIR_PUMP, PIN_FEED_PUMP, PIN_ESTOP = 12, 13, 14, 15, 22
     PWM_FREQUENCY = 1000
     
-    def __init__(self, pi_kp: float = 0.5, pi_ki: float = 0.05, pi_setpoint: int = 120,
+    def __init__(self, pi_kp: float = 0.5, pi_ki: float = 0.05, pi_setpoint: int = 85,
                  max_pump_duty: float = 80.0, estop_enabled: bool = True):
         """Initialize controller with PI params and safety limits."""
         self.pi_kp, self.pi_ki, self.pi_setpoint = pi_kp, pi_ki, pi_setpoint

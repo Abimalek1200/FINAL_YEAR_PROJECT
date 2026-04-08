@@ -112,7 +112,7 @@ async def stream_metrics(websocket: WebSocket, state: dict):
             
             await manager.send({
                 "type": "metrics",
-                "data": metrics
+                "metrics": metrics
             }, websocket)
             
             await asyncio.sleep(0.2)  # 5 FPS (200ms) matching vision processing
