@@ -6,6 +6,7 @@
 const AppState = {
     mode: 'manual', // 'manual' or 'auto'
     connected: false,
+    videoAnnotations: true,
     devices: {
         pump: { running: false, speed: 0 },
         feed: { running: false, intensity: 0 },
@@ -67,8 +68,8 @@ function initializeWebSocket() {
         updateConnectionStatus('connected', 'Connected');
         addAlert('success', 'WebSocket connection established');
 
-        // Align backend PI setpoint with dashboard state on every (re)connect
-        updatePIParameters(null, null, AppState.piController.setpoint)
+        // Align backend SIMO setpoint with dashboard state on every (re)connect
+        updateSIMOParameters(AppState.piController.setpoint)
             .catch((error) => console.error('Initial setpoint sync failed:', error));
     };
 
@@ -105,7 +106,7 @@ function initializeWebSocket() {
 function handleWebSocketMessage(data) {
     switch (data.type) {
         case 'frame':
-            updateVideoFrame(data.image, data.bubbles);
+            updateVideoFrame(data.image, data.bubbles, data.annotated);
             break;
         case 'metrics':
             updateMetrics(data.metrics);
@@ -197,10 +198,13 @@ function setupEventListeners() {
     // System control buttons
     document.getElementById('startAllBtn').addEventListener('click', startAllDevices);
     document.getElementById('stopAllBtn').addEventListener('click', stopAllDevices);
+    document.getElementById('trainModelBtn').addEventListener('click', triggerModelTraining);
     
     // Video controls
     document.getElementById('playPauseBtn').addEventListener('click', toggleVideoPlayback);
     document.getElementById('snapshotBtn').addEventListener('click', takeSnapshot);
+    document.getElementById('annotationToggle').addEventListener('change', toggleVideoAnnotations);
+    updateAnnotationToggleUI();
     
     // Clear alerts
     document.getElementById('clearAlertsBtn').addEventListener('click', clearAlerts);
@@ -551,16 +555,14 @@ async function setPumpSpeed(dutyCycle) {
 }
 
 /**
- * Update PI controller parameters (auto mode)
+ * Update SIMO controller parameters (auto mode)
  */
-async function updatePIParameters(kp, ki, setpoint) {
+async function updateSIMOParameters(setpoint) {
     try {
         const params = {};
-        if (kp !== null && kp !== undefined) params.kp = kp;
-        if (ki !== null && ki !== undefined) params.ki = ki;
         if (setpoint !== null && setpoint !== undefined) params.setpoint = setpoint;
         
-        const response = await fetch('/api/pi/parameters', {
+        const response = await fetch('/api/simo/parameters', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
@@ -568,17 +570,17 @@ async function updatePIParameters(kp, ki, setpoint) {
         
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.detail || 'PI parameter update failed');
+            throw new Error(error.detail || 'SIMO parameter update failed');
         }
         
         const result = await response.json();
-        console.log('PI parameters updated:', result);
-        addAlert('success', 'PI controller updated');
+        console.log('SIMO parameters updated:', result);
+        addAlert('success', 'SIMO controller updated');
         return result;
         
     } catch (error) {
-        console.error('Failed to update PI parameters:', error);
-        addAlert('error', `PI update failed: ${error.message}`);
+        console.error('Failed to update SIMO parameters:', error);
+        addAlert('error', `SIMO update failed: ${error.message}`);
         throw error;
     }
 }
@@ -607,6 +609,45 @@ async function emergencyStop() {
         console.error('Emergency stop failed:', error);
         addAlert('error', `Emergency stop error: ${error.message}`);
         throw error;
+    }
+}
+
+/**
+ * Trigger anomaly model training from collected metrics
+ */
+async function triggerModelTraining() {
+    const trainBtn = document.getElementById('trainModelBtn');
+    const originalLabel = trainBtn ? trainBtn.textContent : '🧠 TRAIN ANOMALY MODEL';
+
+    try {
+        if (trainBtn) {
+            trainBtn.disabled = true;
+            trainBtn.textContent = '⏳ TRAINING...';
+        }
+
+        const response = await fetch('/api/ml/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sample_limit: 1000, save_model: true })
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.detail || 'Model training failed');
+        }
+
+        addAlert('success', `ML training complete (${payload.sample_count} samples)`);
+        console.log('ML training result:', payload);
+        return payload;
+    } catch (error) {
+        console.error('ML training failed:', error);
+        addAlert('error', `ML training failed: ${error.message}`);
+        throw error;
+    } finally {
+        if (trainBtn) {
+            trainBtn.disabled = false;
+            trainBtn.textContent = originalLabel;
+        }
     }
 }
 
@@ -672,7 +713,7 @@ function updateMetrics(metrics) {
     
     // Froth coverage
     if (metrics.froth_coverage !== undefined) {
-        const coverage = Math.round(metrics.froth_coverage * 100);
+        const coverage = Math.round(metrics.froth_coverage * 1000);
         document.getElementById('frothCoverage').textContent = coverage;
     }
     
@@ -682,18 +723,26 @@ function updateMetrics(metrics) {
         document.getElementById('frothStability').textContent = `${stability}%`;
         document.getElementById('stabilityFill').style.width = `${stability}%`;
     }
+
+    // Pump duty (peristaltic frother) - read-only display in Auto mode
+    if (metrics.pump_duty !== undefined) {
+        const duty = Math.max(0, Math.min(100, Number(metrics.pump_duty) || 0));
+        const autoSlider = document.getElementById('pumpSpeedAuto');
+        const autoValue = document.getElementById('pumpSpeedValueAuto');
+        if (autoSlider) autoSlider.value = String(duty);
+        if (autoValue) autoValue.textContent = String(Math.round(duty));
+    }
 }
 
 function updateControlState(data) {
-    if (data.pi_output !== undefined) {
-        document.getElementById('piOutput').textContent = `${Math.round(data.pi_output)}%`;
-    }
-    
-    if (data.pi_error !== undefined) {
-        document.getElementById('piError').textContent = data.pi_error.toFixed(1);
+    // SIMO output display: show current peristaltic pump duty
+    const simoOutput = data?.hardware_status?.pump_duty ?? data?.pump_duty;
+    if (simoOutput !== undefined) {
+        document.getElementById('piOutput').textContent = `${Math.round(Number(simoOutput) || 0)}%`;
     }
 
-    const setpoint = data?.hardware_status?.pi_controller?.setpoint;
+    const setpoint = data?.hardware_status?.auto_control?.setpoint
+        ?? data?.hardware_status?.pi_controller?.setpoint;
     if (setpoint !== undefined) {
         AppState.piController.setpoint = setpoint;
         const setpointEl = document.getElementById('piSetpointDisplay');
@@ -702,8 +751,19 @@ function updateControlState(data) {
         }
     }
 
-    // Sync manual motor states from backend so all connected dashboards stay aligned
-    const motorStates = data?.motor_states;
+    // SIMO error display: setpoint - latest bubble count
+    const bubbleCount = Number(AppState.metrics.bubble_count ?? AppState.metrics.bubbleCount);
+    if (setpoint !== undefined && Number.isFinite(bubbleCount)) {
+        const controlError = Number(setpoint) - bubbleCount;
+        const piErrorEl = document.getElementById('piError');
+        if (piErrorEl) {
+            piErrorEl.textContent = controlError.toFixed(1);
+        }
+    }
+
+    // Sync motor states from backend so all connected dashboards stay aligned.
+    // Prefer controller-reported states (includes AUTO updates), fallback to global state mirror.
+    const motorStates = data?.hardware_status?.motors ?? data?.motor_states;
     if (motorStates) {
         ['feed', 'air', 'agitator'].forEach((device) => {
             if (motorStates[device] === undefined) return;
@@ -811,7 +871,7 @@ let videoPlaying = true;
 let frameCount = 0;
 let fpsStartTime = Date.now();
 
-function updateVideoFrame(imageData, bubbles) {
+function updateVideoFrame(imageData, bubbles, annotated = AppState.videoAnnotations) {
     const canvas = document.getElementById('videoCanvas');
     const ctx = canvas.getContext('2d');
     
@@ -822,8 +882,8 @@ function updateVideoFrame(imageData, bubbles) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
-        // Draw bubble overlays if provided
-        if (bubbles && bubbles.length > 0) {
+        // Draw bubble overlays only when the backend is sending raw frames
+        if (!annotated && bubbles && bubbles.length > 0) {
             drawBubbleOverlays(ctx, bubbles);
         }
         
@@ -888,6 +948,31 @@ function takeSnapshot() {
     link.click();
     
     addAlert('success', 'Snapshot saved');
+}
+
+function toggleVideoAnnotations() {
+    const checkbox = document.getElementById('annotationToggle');
+    AppState.videoAnnotations = checkbox ? checkbox.checked : true;
+    updateAnnotationToggleUI();
+
+    sendWebSocketMessage({
+        type: 'control',
+        action: 'video_annotations',
+        showAnnotations: AppState.videoAnnotations
+    });
+}
+
+function updateAnnotationToggleUI() {
+    const label = document.getElementById('annotationToggleLabel');
+    const checkbox = document.getElementById('annotationToggle');
+
+    if (checkbox) {
+        checkbox.checked = AppState.videoAnnotations;
+    }
+
+    if (label) {
+        label.textContent = AppState.videoAnnotations ? 'Annotated' : 'Raw';
+    }
 }
 
 // ========================================

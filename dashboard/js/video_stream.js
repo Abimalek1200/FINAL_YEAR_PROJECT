@@ -48,7 +48,7 @@ class VideoStreamHandler {
         }
     }
 
-    processFrame(imageData, bubbleData = null) {
+    processFrame(imageData, bubbleData = null, isAnnotated = false) {
         if (!this.isPlaying) return;
 
         const img = new Image();
@@ -60,8 +60,8 @@ class VideoStreamHandler {
             // Draw video frame
             this.ctx.drawImage(img, 0, 0, this.canvas.width, this.canvas.height);
             
-            // Draw bubble overlays if available
-            if (bubbleData && bubbleData.bubbles) {
+            // Draw bubble overlays only for raw frames
+            if (!isAnnotated && bubbleData && bubbleData.bubbles) {
                 this.drawBubbleOverlays(bubbleData.bubbles);
             }
             
@@ -230,13 +230,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Export for use in app.js
-window.updateVideoFrame = (imageData, bubbles) => {
+window.updateVideoFrame = (imageData, bubbles, annotated = false) => {
     if (videoHandler) {
         const bubbleData = {
             bubbles: bubbles,
             bubble_count: bubbles ? bubbles.length : 0
         };
-        videoHandler.processFrame(imageData, bubbleData);
+        videoHandler.processFrame(imageData, bubbleData, annotated);
     }
 };
 

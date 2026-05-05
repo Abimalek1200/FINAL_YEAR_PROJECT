@@ -16,14 +16,12 @@ from .metrics_smoothing import TimeWindowMovingAverage
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PI_KP = 0.5
-DEFAULT_PI_KI = 0.05
-DEFAULT_PI_SETPOINT = 85
+DEFAULT_TARGET_SETPOINT = 85
 DEFAULT_MAX_PUMP_DUTY = 80.0
 
 
-def _load_control_defaults() -> tuple[float, float, int, float]:
-    """Load PI and pump defaults from config/control_config.json with safe fallbacks."""
+def _load_control_defaults() -> tuple[int, float]:
+    """Load setpoint and pump limits from config/control_config.json with safe fallbacks."""
     try:
         project_root = Path(__file__).resolve().parents[2]
         control_config_path = project_root / "config" / "control_config.json"
@@ -34,20 +32,20 @@ def _load_control_defaults() -> tuple[float, float, int, float]:
         pi_cfg = cfg.get("pi_controller", {})
         pump_cfg = cfg.get("frother_pump", {})
 
-        kp = float(pi_cfg.get("kp", DEFAULT_PI_KP))
-        ki = float(pi_cfg.get("ki", DEFAULT_PI_KI))
-        setpoint = int(pi_cfg.get("setpoint", DEFAULT_PI_SETPOINT))
+        setpoint = int(pi_cfg.get("setpoint", DEFAULT_TARGET_SETPOINT))
         max_duty = float(pump_cfg.get("max_duty_cycle", DEFAULT_MAX_PUMP_DUTY))
 
-        return kp, ki, setpoint, max_duty
+        return setpoint, max_duty
     except Exception as e:
         logger.warning(f"Could not load control config defaults: {e}. Using built-in defaults.")
-        return DEFAULT_PI_KP, DEFAULT_PI_KI, DEFAULT_PI_SETPOINT, DEFAULT_MAX_PUMP_DUTY
+        return DEFAULT_TARGET_SETPOINT, DEFAULT_MAX_PUMP_DUTY
 
 # Global system state
 system_state = {
     'vision_processor': None,
     'hardware_controller': None,
+    'anomaly_detector': None,
+    'data_manager': None,
     'running': False,
     'current_metrics': {
         'bubble_count': 0,
@@ -61,6 +59,16 @@ system_state = {
     'bubble_count_ma': TimeWindowMovingAverage(window_seconds=4.0),
     'pump_mode': 'manual',  # 'auto' or 'manual'
     'motor_states': {'agitator': 0.0, 'air': 0.0, 'feed': 0.0}
+    ,
+    'anomaly_status': {
+        'status': 'normal',
+        'prediction': 1,
+        'score': 0.0,
+        'trained': False,
+        'message': 'Detector not trained',
+        'timestamp': '',
+        'sequence': 0
+    }
 }
 
 
@@ -72,7 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
     
     try:
-        pi_kp, pi_ki, pi_setpoint, max_pump_duty = _load_control_defaults()
+        target_setpoint, max_pump_duty = _load_control_defaults()
 
         # Initialize vision processor
         logger.info("Initializing vision processor...")
@@ -84,9 +92,28 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing hardware controller...")
         from ..control.hardware_controller import HardwareController
         system_state['hardware_controller'] = HardwareController(
-            pi_kp=pi_kp, pi_ki=pi_ki, pi_setpoint=pi_setpoint, max_pump_duty=max_pump_duty
+            target_bubble_count=target_setpoint, max_pump_duty=max_pump_duty
         )
         logger.info("✓ Hardware controller initialized")
+
+        # Initialize ML components (for operator-triggered training)
+        logger.info("Initializing ML components...")
+        from ..ml.anomaly_detector import FrothAnomalyDetector
+        from ..utils.data_manager import DataManager
+        system_state['anomaly_detector'] = FrothAnomalyDetector(contamination=0.1)
+        system_state['data_manager'] = DataManager(db_path="data/flotation.db")
+
+        # Load existing trained model if available
+        model_path = "models/anomaly_detector.pkl"
+        loaded = system_state['anomaly_detector'].load(model_path)
+        if loaded:
+            logger.info(f"✓ Loaded trained anomaly model from {model_path}")
+            system_state['anomaly_status']['trained'] = True
+            system_state['anomaly_status']['message'] = 'Trained model loaded'
+        else:
+            logger.info("No trained anomaly model loaded; detector will run untrained until training is triggered")
+
+        logger.info("✓ ML components initialized")
         
         # Start background tasks
         system_state['running'] = True
@@ -110,6 +137,9 @@ async def lifespan(app: FastAPI):
     
     if system_state['vision_processor']:
         system_state['vision_processor'].release()
+
+    if system_state['data_manager']:
+        system_state['data_manager'].close()
     
     logger.info("✓ Shutdown complete")
 
@@ -132,6 +162,11 @@ async def vision_loop():
                     k: v for k, v in metrics.items() if k != 'success'
                 }
                 system_state['current_metrics']['pump_duty'] = system_state['hardware_controller'].pump_duty
+
+                # Save metrics for anomaly-model training dataset
+                data_manager = system_state.get('data_manager')
+                if data_manager is not None:
+                    data_manager.save_metrics(system_state['current_metrics'])
             
             await asyncio.sleep(0.2)  # 5 FPS processing rate
         except Exception as e:
@@ -140,7 +175,7 @@ async def vision_loop():
 
 
 async def control_loop():
-    """Continuous control loop for auto mode."""
+    """Continuous control loop for auto mode and anomaly inference."""
     controller = system_state['hardware_controller']
     
     while system_state['running']:
@@ -151,7 +186,51 @@ async def control_loop():
             # Update pump in auto mode
             if system_state['pump_mode'] == 'auto':
                 bubble_count = system_state['current_metrics']['bubble_count']
-                controller.set_pump_speed(bubble_count)
+                controller.auto_control_step(bubble_count)
+
+            # Run anomaly inference every control cycle
+            detector = system_state.get('anomaly_detector')
+            metrics = system_state.get('current_metrics', {})
+            if detector is not None:
+                features = [
+                    float(metrics.get('bubble_count', 0.0)),
+                    float(metrics.get('avg_bubble_size', 0.0)),
+                    float(metrics.get('size_std_dev', 0.0)),
+                    float(metrics.get('froth_coverage', 0.0))
+                ]
+
+                prediction = int(detector.predict(features))
+                score = float(detector.get_anomaly_score(features))
+                trained = bool(detector.is_trained)
+
+                if not trained:
+                    status = 'normal'
+                    message = 'Detector not trained'
+                elif prediction == -1:
+                    status = 'critical' if score <= -0.20 else 'warning'
+                    message = f"Anomaly detected (score={score:.3f})"
+                else:
+                    status = 'normal'
+                    message = 'Normal operation'
+
+                previous = system_state.get('anomaly_status', {})
+                changed = (
+                    status != previous.get('status')
+                    or prediction != previous.get('prediction')
+                    or trained != previous.get('trained')
+                    or abs(score - float(previous.get('score', 0.0))) >= 0.01
+                )
+
+                sequence = int(previous.get('sequence', 0)) + (1 if changed else 0)
+                system_state['anomaly_status'] = {
+                    'status': status,
+                    'prediction': prediction,
+                    'score': score,
+                    'trained': trained,
+                    'message': message,
+                    'timestamp': metrics.get('timestamp', ''),
+                    'sequence': sequence
+                }
             
             await asyncio.sleep(1.0)  # 1 Hz control rate
         except Exception as e:

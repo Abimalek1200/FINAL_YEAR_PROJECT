@@ -207,6 +207,25 @@ python3 test_hardware_controller.py
 | Feed Pump | 15 | Software PWM |
 | E-Stop (Input) | 22 | Pull-up enabled |
 
+## Indicator LEDs
+
+The system exposes four status LEDs wired to GPIO for quick local indication:
+
+| LED Color | GPIO Pin | Meaning / When ON |
+|-----------|----------|-------------------|
+| RED | 23 | Abnormal condition detected (anomaly, critical fault) |
+| AMBER | 24 | Camera NOT detected (camera fault / disconnected) |
+| GREEN | 25 | Any pump or motor is currently running |
+| WHITE | 8 | Controller powered / initialized (ON while running) |
+
+Programmatic helpers are available in the controller to toggle these indicators:
+
+- `set_abnormal(bool)` — turn RED on/off
+- `set_camera_present(bool)` — amber is ON when camera is NOT present (helper inverts the flag)
+- `set_power_on(bool)` — control the WHITE LED explicitly
+
+Note: GREEN is updated automatically by the `HardwareController` when any pump PWM is non-zero.
+
 ## Safety Features
 
 1. **E-Stop Monitoring** - GPIO 22 checked continuously

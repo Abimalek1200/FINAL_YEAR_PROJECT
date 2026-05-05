@@ -33,6 +33,13 @@
                     <h2>📹 Live Video Feed</h2>
                     <div class="video-controls">
                         <button id="playPauseBtn" class="btn btn-sm" title="Play/Pause">⏸️</button>
+                        <label class="video-toggle" title="Show annotated frames">
+                            <input type="checkbox" id="annotationToggle" checked>
+                            <span class="video-toggle-track">
+                                <span class="video-toggle-thumb"></span>
+                            </span>
+                            <span class="video-toggle-label" id="annotationToggleLabel">Annotated</span>
+                        </label>
                         <button id="snapshotBtn" class="btn btn-sm" title="Take Snapshot">📸</button>
                     </div>
                 </div>
@@ -275,8 +282,8 @@
                                         </div>
                                     </div>
                                     <div class="auto-mode-notice">
-                                        <p>🔒 System is running in automatic mode. PI controller is actively maintaining optimal froth conditions.</p>
-                                        <p>⚠️ Peristaltic pump is controlled automatically. Feed pump, air pump, and agitator can be adjusted manually below.</p>
+                                        <p>🔒 System is running in automatic mode.A loop controller is actively maintaining optimal froth conditions.</p>
+                                        <p>⚠️ Peristaltic pump and Air pump is controlled automatically. Feed pump and agitator can be adjusted manually below.</p>
                                     </div>
                                 </div>
                             </div>
@@ -314,23 +321,23 @@
                                     <div class="control-header">
                                         <h3>🌬️ Air Pump</h3>
                                         <div class="control-status">
-                                            <button class="status-toggle" id="airToggleAuto" data-device="air">
+                                            <button class="status-toggle" id="airToggleAuto" data-device="air" disabled>
                                                 <span class="status-dot status-stopped"></span>
-                                                <span class="status-text">Stopped</span>
+                                                <span class="status-text">Auto</span>
                                             </button>
                                         </div>
                                     </div>
                                     <div class="control-body">
                                         <div class="slider-control">
                                             <label for="airIntensityAuto">Intensity (%)</label>
-                                            <input type="range" id="airIntensityAuto" min="0" max="100" value="0" class="slider">
+                                            <input type="range" id="airIntensityAuto" min="0" max="100" value="0" class="slider" disabled>
                                             <div class="slider-value">
                                                 <span id="airIntensityValueAuto">0</span>%
                                             </div>
                                         </div>
                                         <div class="control-info">
-                                            <span class="info-label">Air Flow:</span>
-                                            <span class="info-value" id="airFlowAuto">Stopped</span>
+                                            <span class="info-label">Note:</span>
+                                            <span class="info-value" id="airFlowAuto">Displayed only — controlled automatically</span>
                                         </div>
                                     </div>
                                 </div>
@@ -360,6 +367,32 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- Peristaltic (Frother) - Read-only in Auto Mode -->
+                                <div class="control-group">
+                                    <div class="control-header">
+                                        <h3>💧 Peristaltic Pump</h3>
+                                        <div class="control-status">
+                                            <button class="status-toggle" id="pumpToggleAuto" data-device="pump">
+                                                <span class="status-dot status-stopped"></span>
+                                                <span class="status-text">Auto</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="control-body">
+                                        <div class="slider-control">
+                                            <label for="pumpSpeedAuto">Speed (%)</label>
+                                            <input type="range" id="pumpSpeedAuto" min="0" max="100" value="0" class="slider" disabled>
+                                            <div class="slider-value">
+                                                <span id="pumpSpeedValueAuto">0</span>%
+                                            </div>
+                                        </div>
+                                        <div class="control-info">
+                                            <span class="info-label">Note:</span>
+                                            <span class="info-value">Displayed only — controlled automatically</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                         </div>
@@ -375,6 +408,7 @@
                                 <div class="button-group">
                                     <button class="btn btn-success" id="startAllBtn">▶️ START ALL</button>
                                     <button class="btn btn-danger" id="stopAllBtn">⏹️ STOP ALL</button>
+                                    <button class="btn btn-sm" id="trainModelBtn">🧠 TRAIN ANOMALY MODEL</button>
                                 </div>
                             </div>
                         </div>

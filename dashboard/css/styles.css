@@ -220,6 +220,27 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    
+}
+
+/* Disabled/readonly slider appearance */
+input[type="range"].slider[disabled] {
+    opacity: 0.55;
+    filter: grayscale(60%);
+    pointer-events: none;
+}
+
+/* Ensure the slider-value for disabled sliders appears muted */
+input[type="range"].slider[disabled] + .slider-value span,
+#pumpSpeedValueAuto {
+    color: var(--text-muted);
+}
+
+/* Disabled auto-control status toggle appearance */
+.status-toggle[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 .card-header h2 {
@@ -246,6 +267,59 @@ body {
 .video-controls {
     display: flex;
     gap: var(--spacing-sm);
+    align-items: center;
+}
+
+.video-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.video-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.video-toggle-track {
+    position: relative;
+    width: 46px;
+    height: 24px;
+    border-radius: 999px;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.video-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-color: var(--text-secondary);
+    transition: transform var(--transition-fast), background-color var(--transition-fast);
+}
+
+.video-toggle input:checked + .video-toggle-track {
+    background-color: rgba(39, 174, 96, 0.2);
+    border-color: var(--status-active);
+}
+
+.video-toggle input:checked + .video-toggle-track .video-toggle-thumb {
+    transform: translateX(22px);
+    background-color: var(--status-active);
+}
+
+.video-toggle-label {
+    min-width: 84px;
+    font-weight: 600;
 }
 
 .video-container {

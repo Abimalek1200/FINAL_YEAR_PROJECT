@@ -333,6 +333,14 @@ class VisionProcessor:
             Annotated frame or None if no frame available
         """
         return self.last_annotated_frame
+
+    def get_raw_frame(self) -> Optional[np.ndarray]:
+        """Get the last captured unannotated camera frame.
+
+        Returns:
+            Raw frame or None if no frame available
+        """
+        return self.last_frame
     
     def release(self):
         """Release camera resources."""

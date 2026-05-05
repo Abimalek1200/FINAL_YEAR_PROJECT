@@ -1,6 +1,7 @@
 """REST API routes: metrics, control, status."""
 
 import logging
+import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -30,10 +31,8 @@ class PumpSpeedRequest(BaseModel):
     duty_cycle: float = Field(ge=0, le=100)
 
 
-class PIParametersRequest(BaseModel):
-    """Update PI controller parameters."""
-    kp: float = Field(default=None, ge=0, le=10)
-    ki: float = Field(default=None, ge=0, le=1)
+class ControlParametersRequest(BaseModel):
+    """Update SIMO auto-control parameters."""
     setpoint: int = Field(default=None, ge=0, le=500)
 
 
@@ -41,6 +40,12 @@ class MotorControlRequest(BaseModel):
     """Control manual motors."""
     motor_id: str = Field(pattern="^(agitator|air|feed)$")
     duty_cycle: float = Field(ge=0, le=100)
+
+
+class TrainModelRequest(BaseModel):
+    """Trigger anomaly model training from collected metrics."""
+    sample_limit: int = Field(default=1000, ge=100, le=10000)
+    save_model: bool = Field(default=True)
 
 
 def get_state():
@@ -121,9 +126,9 @@ async def set_pump_speed(request: PumpSpeedRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/pi/parameters")
-async def update_pi_parameters(request: PIParametersRequest):
-    """Update PI controller parameters (auto mode)."""
+@router.post("/simo/parameters")
+async def update_simo_parameters(request: ControlParametersRequest):
+    """Update SIMO auto-control parameters."""
     try:
         state = get_state()
         controller = state['hardware_controller']
@@ -131,18 +136,13 @@ async def update_pi_parameters(request: PIParametersRequest):
         if not controller:
             raise HTTPException(status_code=503, detail="Controller not initialized")
         
-        controller.set_pi_parameters(
-            kp=request.kp,
-            ki=request.ki,
-            setpoint=request.setpoint
-        )
+        if request.setpoint is not None:
+            controller.set_auto_setpoint(request.setpoint)
         
         return {
             "status": "ok",
             "parameters": {
-                "kp": controller.pi_kp,
-                "ki": controller.pi_ki,
-                "setpoint": controller.pi_setpoint
+                "setpoint": controller.target_bubble_count
             }
         }
     except ValueError as e:
@@ -174,6 +174,48 @@ async def control_motor(request: MotorControlRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error controlling motor: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ml/train")
+async def train_anomaly_model(request: TrainModelRequest):
+    """Train anomaly detector from recently collected metrics."""
+    try:
+        state = get_state()
+        detector = state.get('anomaly_detector')
+        data_manager = state.get('data_manager')
+
+        if detector is None or data_manager is None:
+            raise HTTPException(status_code=503, detail="ML components not initialized")
+
+        training_rows = data_manager.get_training_data(limit=request.sample_limit)
+        sample_count = len(training_rows)
+
+        if sample_count < 100:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not enough training data. Need at least 100 samples, have {sample_count}."
+            )
+
+        # DataManager returns [bubble_count, avg_size, std_dev, coverage_ratio]
+        training_data = np.array(training_rows, dtype=float)
+        detector.train(training_data)
+
+        model_path = "models/anomaly_detector.pkl"
+        if request.save_model:
+            detector.save(model_path)
+
+        return {
+            "status": "ok",
+            "message": "Anomaly model trained successfully",
+            "sample_count": sample_count,
+            "saved": bool(request.save_model),
+            "model_path": model_path if request.save_model else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error training anomaly model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

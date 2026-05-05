@@ -22,7 +22,7 @@ class FrothAnomalyDetector:
     (data points that don't fit the normal pattern).
     """
     
-    def __init__(self, contamination: float = 0.1):
+    def __init__(self, contamination: float = 0.06):
         """Initialize anomaly detector.
         
         Args:
