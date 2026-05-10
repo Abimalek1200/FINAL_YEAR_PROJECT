@@ -1,0 +1,122 @@
+I have an existing working VisionProcessor class for a froth flotation system. It currently uses OpenCV preprocessing, contour detection, area/circularity filtering, stores bubble centroids, calculates froth metrics, and creates annotated frames with green circles.
+
+Implement optional U-Net ONNX integration without breaking any existing functionality.
+
+Requirements:
+
+1. Do NOT replace the whole existing pipeline.
+2. Add the ONNX model only as an optional binary mask generator before contour detection.
+3. Keep all existing public methods and return structures unchanged:
+   - initialize_camera()
+   - capture_frame()
+   - process_bubbles()
+   - _analyze_contours()
+   - annotate_frame()
+   - analyze_froth()
+   - get_metrics()
+   - get_annotated_frame()
+   - get_raw_frame()
+   - release()
+4. Keep existing outputs exactly compatible:
+   process_bubbles() must still return:
+   {
+       "count": int,
+       "diameters": list,
+       "areas": list,
+       "avg_diameter": float,
+       "mask": np.ndarray or None
+   }
+5. Keep bubble_centroids working because annotate_frame() depends on it.
+6. Keep last_frame and last_annotated_frame working.
+7. Add a new file:
+   src/vision/unet_segmenter.py
+
+The new UNetSegmenter class should:
+- Load an ONNX model from models/froth_unet.onnx using cv2.dnn.readNetFromONNX()
+- Have an available() method that returns True if the model loaded
+- Have a predict_mask(frame) method
+- Preprocess frame:
+  BGR → RGB
+  resize to 256x256
+  convert to float32
+  normalize to 0–1
+  convert to NCHW shape: 1 x 3 x 256 x 256
+- Run inference with cv.dnn
+- Apply sigmoid to logits
+- Threshold probability mask using configurable threshold, default 0.45
+- Resize mask back to original frame size
+- Return a binary uint8 mask where foreground is 255 and background is 0
+- Apply light morphology cleanup using a 3x3 elliptical kernel
+
+8. Modify VisionProcessor.__init__() to accept optional U-Net parameters:
+   use_unet: bool = True
+   unet_model_path: str = "models/froth_unet.onnx"
+   unet_input_size: int = 256
+   unet_threshold: float = 0.45
+   min_unet_coverage: float = 0.02
+   max_unet_coverage: float = 0.90
+
+9. VisionProcessor should try to load UNetSegmenter in __init__().
+   If loading fails or the file is missing, log a warning and continue with the current OpenCV pipeline.
+
+10. Refactor preprocessing into helper methods:
+    - _get_classical_mask(frame)
+    - _get_unet_mask(frame)
+    - _get_binary_mask(frame)
+
+11. _get_classical_mask(frame) should contain the current working OpenCV preprocessing:
+    grayscale
+    CLAHE
+    median blur
+    Gaussian blur
+    adaptive threshold
+    morphology open
+    morphology close
+
+12. _get_unet_mask(frame) should:
+    - call self.unet.predict_mask(frame)
+    - check the mask is not None
+    - check coverage = nonzero(mask) / mask.size
+    - reject the U-Net mask if coverage < min_unet_coverage or coverage > max_unet_coverage
+    - return None if invalid
+
+13. _get_binary_mask(frame) should:
+    - try U-Net first if use_unet is True and the model is available
+    - if U-Net returns a valid mask, use it and set self.detection_source = "unet"
+    - otherwise use _get_classical_mask(frame) and set self.detection_source = "classical"
+
+14. process_bubbles(frame) should call _get_binary_mask(frame), then continue with the existing contour detection and _analyze_contours(contours).
+    Do not change _analyze_contours unless absolutely necessary.
+
+15. The mask returned by process_bubbles() should remain the final valid bubble mask made from accepted bubble centroids, exactly like the current behavior.
+
+16. Add robust error handling:
+    - If U-Net inference fails during runtime, log the error and fall back to classical OpenCV.
+    - Never crash the vision loop because of the ONNX model.
+    - If the ONNX model is missing, the project must behave exactly as before.
+
+17. Do not process annotated frames. The model and OpenCV detection must always run on the raw camera frame.
+
+18. Keep imports lightweight. Do not add torch, onnxruntime, or pycocotools to Raspberry Pi runtime code. Use only cv2 and numpy for ONNX inference.
+
+19. Add useful logging:
+    - when U-Net loads successfully
+    - when U-Net is unavailable
+    - when U-Net mask is rejected due to coverage
+    - whether current detection source is "unet" or "classical"
+
+20. Preserve all existing comments, docstrings, and student-friendly style where possible.
+
+Goal:
+Create a hybrid AI-assisted vision pipeline:
+
+Raw frame
+→ optional U-Net ONNX mask
+→ fallback classical OpenCV mask if needed
+→ existing contour filtering
+→ existing bubble centroids
+→ existing annotation
+→ existing froth metrics
+→ existing dashboard/control compatibility
+
+Do not break the current working system.

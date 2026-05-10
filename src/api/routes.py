@@ -71,11 +71,12 @@ async def get_status():
         state = get_state()
         controller = state['hardware_controller']
         
+        # Read from controller (single source of truth), not state dict
         return {
             'running': state['running'],
-            'pump_mode': state['pump_mode'],
+            'pump_mode': controller.pump_mode if controller else 'manual',
             'hardware_status': controller.get_status() if controller else {},
-            'motor_states': state['motor_states']
+            'motor_states': controller.motor_states.copy() if controller else {}
         }
     except Exception as e:
         logger.error(f"Error getting status: {e}")
@@ -93,9 +94,11 @@ async def set_pump_mode(request: PumpModeRequest):
             raise HTTPException(status_code=503, detail="Controller not initialized")
         
         controller.set_pump_mode(request.mode)
-        state['pump_mode'] = request.mode
+        state['pump_mode'] = controller.pump_mode  # Sync from controller (single source of truth)
+        # On mode switch, sync motor states from controller to state
+        state['motor_states'] = controller.motor_states.copy()
         
-        return {"status": "ok", "mode": request.mode}
+        return {"status": "ok", "mode": controller.pump_mode}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
