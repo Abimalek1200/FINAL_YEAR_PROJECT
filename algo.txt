@@ -1,122 +1,259 @@
-I have an existing working VisionProcessor class for a froth flotation system. It currently uses OpenCV preprocessing, contour detection, area/circularity filtering, stores bubble centroids, calculates froth metrics, and creates annotated frames with green circles.
-
-Implement optional U-Net ONNX integration without breaking any existing functionality.
-
-Requirements:
-
-1. Do NOT replace the whole existing pipeline.
-2. Add the ONNX model only as an optional binary mask generator before contour detection.
-3. Keep all existing public methods and return structures unchanged:
-   - initialize_camera()
-   - capture_frame()
-   - process_bubbles()
-   - _analyze_contours()
-   - annotate_frame()
-   - analyze_froth()
-   - get_metrics()
-   - get_annotated_frame()
-   - get_raw_frame()
-   - release()
-4. Keep existing outputs exactly compatible:
-   process_bubbles() must still return:
-   {
-       "count": int,
-       "diameters": list,
-       "areas": list,
-       "avg_diameter": float,
-       "mask": np.ndarray or None
-   }
-5. Keep bubble_centroids working because annotate_frame() depends on it.
-6. Keep last_frame and last_annotated_frame working.
-7. Add a new file:
-   src/vision/unet_segmenter.py
-
-The new UNetSegmenter class should:
-- Load an ONNX model from models/froth_unet.onnx using cv2.dnn.readNetFromONNX()
-- Have an available() method that returns True if the model loaded
-- Have a predict_mask(frame) method
-- Preprocess frame:
-  BGR → RGB
-  resize to 256x256
-  convert to float32
-  normalize to 0–1
-  convert to NCHW shape: 1 x 3 x 256 x 256
-- Run inference with cv.dnn
-- Apply sigmoid to logits
-- Threshold probability mask using configurable threshold, default 0.45
-- Resize mask back to original frame size
-- Return a binary uint8 mask where foreground is 255 and background is 0
-- Apply light morphology cleanup using a 3x3 elliptical kernel
-
-8. Modify VisionProcessor.__init__() to accept optional U-Net parameters:
-   use_unet: bool = True
-   unet_model_path: str = "models/froth_unet.onnx"
-   unet_input_size: int = 256
-   unet_threshold: float = 0.45
-   min_unet_coverage: float = 0.02
-   max_unet_coverage: float = 0.90
-
-9. VisionProcessor should try to load UNetSegmenter in __init__().
-   If loading fails or the file is missing, log a warning and continue with the current OpenCV pipeline.
-
-10. Refactor preprocessing into helper methods:
-    - _get_classical_mask(frame)
-    - _get_unet_mask(frame)
-    - _get_binary_mask(frame)
-
-11. _get_classical_mask(frame) should contain the current working OpenCV preprocessing:
-    grayscale
-    CLAHE
-    median blur
-    Gaussian blur
-    adaptive threshold
-    morphology open
-    morphology close
-
-12. _get_unet_mask(frame) should:
-    - call self.unet.predict_mask(frame)
-    - check the mask is not None
-    - check coverage = nonzero(mask) / mask.size
-    - reject the U-Net mask if coverage < min_unet_coverage or coverage > max_unet_coverage
-    - return None if invalid
-
-13. _get_binary_mask(frame) should:
-    - try U-Net first if use_unet is True and the model is available
-    - if U-Net returns a valid mask, use it and set self.detection_source = "unet"
-    - otherwise use _get_classical_mask(frame) and set self.detection_source = "classical"
-
-14. process_bubbles(frame) should call _get_binary_mask(frame), then continue with the existing contour detection and _analyze_contours(contours).
-    Do not change _analyze_contours unless absolutely necessary.
-
-15. The mask returned by process_bubbles() should remain the final valid bubble mask made from accepted bubble centroids, exactly like the current behavior.
-
-16. Add robust error handling:
-    - If U-Net inference fails during runtime, log the error and fall back to classical OpenCV.
-    - Never crash the vision loop because of the ONNX model.
-    - If the ONNX model is missing, the project must behave exactly as before.
-
-17. Do not process annotated frames. The model and OpenCV detection must always run on the raw camera frame.
-
-18. Keep imports lightweight. Do not add torch, onnxruntime, or pycocotools to Raspberry Pi runtime code. Use only cv2 and numpy for ONNX inference.
-
-19. Add useful logging:
-    - when U-Net loads successfully
-    - when U-Net is unavailable
-    - when U-Net mask is rejected due to coverage
-    - whether current detection source is "unet" or "classical"
-
-20. Preserve all existing comments, docstrings, and student-friendly style where possible.
+You are editing my Raspberry Pi 5 froth flotation control project.
 
 Goal:
-Create a hybrid AI-assisted vision pipeline:
+Implement the final agreed control scheme as a simple, low-technical-user-friendly AUTO control mode without breaking the existing MANUAL mode, API routes, GPIO pin mapping, E-Stop logic, or dashboard metrics.
 
-Raw frame
-→ optional U-Net ONNX mask
-→ fallback classical OpenCV mask if needed
-→ existing contour filtering
-→ existing bubble centroids
-→ existing annotation
-→ existing froth metrics
-→ existing dashboard/control compatibility
+Existing project structure:
+- Main control file: src/control/hardware_controller.py
+- Main FastAPI loop file: src/api/main.py
+- Routes file: src/api/routes.py
+- Existing HardwareController already has:
+  - Frother/peristaltic pump on GPIO 12
+  - Agitator on GPIO 13
+  - Air pump on GPIO 14
+  - Feed pump on GPIO 15
+  - E-Stop on GPIO 22
+  - manual/auto pump mode
+  - set_pump_speed()
+  - _pi_update()
+  - manual_motor_control()
+  - get_status()
+- Existing main.py already has:
+  - vision_loop() updating metrics every 0.5 seconds
+  - control_loop() currently updating auto control every 1 second
 
-Do not break the current working system.
+Important:
+Do NOT rewrite the whole project.
+Do NOT change the manual mode behaviour.
+Do NOT change the REST API route names.
+Do NOT remove existing E-Stop behaviour.
+Do NOT make agitator or feed pump automatic.
+Only change the automatic frother dosing and automatic air correction logic.
+
+Implement this control scheme:
+
+1. AUTO control timing
+- Keep vision_loop() fast at 0.5 seconds.
+- Change AUTO control so pump/air duty decisions are made only once every CONTROL_PERIOD seconds.
+- CONTROL_PERIOD should default to 15.0 seconds, but be easy to change to 10.0 seconds.
+- Between control decisions, hold the last frother and air duty.
+- During the waiting period, still check E-Stop every 0.5 seconds.
+- If E-Stop triggers, stop all devices.
+- If mode changes from auto to manual during the wait, stop automatic control immediately and do not continue applying auto decisions.
+
+2. Frother pump PI control
+Use discrete-time sampled PI control for frother dosing.
+
+Definitions:
+- measured_count = latest bubble_count from vision metrics
+- error = pi_setpoint - measured_count
+- deadband = 10 counts
+- running_duty = 0%
+- max_auto_frother_duty = 50%
+- full_scale_error = pi_setpoint
+
+Frother behaviour:
+- If measured_count is within pi_setpoint ± 10:
+  - frother duty = 0%
+  - reset no-response counter
+  - bleed/decay integral
+  - state = "ON_TARGET"
+
+- If measured_count is above pi_setpoint + 10:
+  - frother duty = 0%
+  - bleed/decay integral faster
+  - state should later be set by air logic, e.g. "AIR_NORMAL", "AIR_REDUCING", or "AIR_MINIMUM"
+
+- If measured_count is below pi_setpoint - 10:
+  - calculate proportional duty:
+    error_ratio = error / full_scale_error
+    clamp error_ratio from 0 to 1
+    proportional_duty = pi_kp * max_auto_frother_duty * error_ratio
+
+  - calculate integral bias:
+    pi_integral += pi_ki * error * CONTROL_PERIOD
+    clamp pi_integral from 0 to integral_limit
+    integral_limit should default to 20.0 duty-percent contribution
+
+  - raw_duty = proportional_duty + pi_integral
+  - final frother duty = clamp raw_duty between 0 and 50
+  - apply anti-windup:
+    only accept integral growth when raw_duty is below max_auto_frother_duty
+  - state = "FROTHER_PI_DOSING"
+
+Recommended default tuning:
+- pi_kp = 1.0
+- pi_ki = 0.001
+- pi_setpoint = 120
+- max_auto_frother_duty = 50.0
+- running_duty = 0.0
+- deadband = 10.0
+
+3. Saturation/no-response freeze protection
+Implement saturation protection for the frother PI.
+
+Purpose:
+If the controller is dosing but the bubble count does not improve much after repeated sampled control cycles, freeze dosing to prevent reagent waste.
+
+Rules:
+- Only check saturation when count is still below the setpoint band.
+- Compare current measured_count with the previous sampled control count.
+- If frother pump was dosing at or above min_active_duty and count increased by less than response_threshold, increment no_response_cycles.
+- response_threshold = 10 bubble counts.
+- min_active_duty = 2%.
+- If count improves by 10 or more, reset no_response_cycles to 0.
+- If no_response_cycles reaches 5:
+  - set dosing_frozen = True
+  - frother duty = 0%
+  - pi_integral = 0
+  - auto_state = "FROZEN_NO_RESPONSE"
+  - keep frozen until operator resets AUTO mode by switching manual then auto, or until set_pump_mode('auto') is called again.
+
+4. Air pump automatic correction above setpoint
+The air pump should only be automatically corrected when bubble count is clearly above the setpoint.
+
+Air behaviour:
+- Normal air duty = 65%
+- Minimum air duty = 55%
+- Air reduction starts only when count is above setpoint by 20 counts.
+- Air reaches minimum duty when count is above setpoint by 50 counts.
+- Between +20 and +50, reduce air linearly from 65% to 55%.
+
+Formula:
+overshoot = measured_count - pi_setpoint
+
+If overshoot <= 20:
+    air_duty = 65
+
+If overshoot >= 50:
+    air_duty = 55
+
+If 20 < overshoot < 50:
+    air_duty = 65 - ((overshoot - 20) / (50 - 20)) * (65 - 55)
+
+Important:
+- When count is below or inside the setpoint band, air should return to normal duty = 65%.
+- Frother and air should not fight each other:
+  - low count: frother PI acts, air = 65
+  - on target: frother = 0, air = 65
+  - slightly high: frother = 0, air = 65
+  - clearly high: frother = 0, air reduces proportionally
+  - very high: frother = 0, air = 55
+
+5. Code structure requested
+In src/control/hardware_controller.py:
+- Add constants/attributes in __init__ for:
+  - control_period = 15.0
+  - frother_deadband = 10.0
+  - max_auto_frother_duty = 50.0
+  - running_frother_duty = 0.0
+  - integral_limit = 20.0
+  - integral_bleed_on_target = 0.7
+  - integral_bleed_above_target = 0.5
+  - dosing_frozen = False
+  - no_response_cycles = 0
+  - no_response_limit = 5
+  - response_threshold = 10.0
+  - min_active_duty = 2.0
+  - last_control_count = None
+  - auto_state = "MANUAL"
+  - air_normal_duty = 65.0
+  - air_min_duty = 55.0
+  - air_reduce_start = 20.0
+  - air_full_reduce = 50.0
+  - air_auto_duty = 65.0
+
+- Replace _pi_update() with the sampled frother PI logic.
+- Add a helper method _air_update(measured_count: float) -> float.
+- Add a public method auto_control_from_count(measured_count: float) -> Dict that:
+  - checks E-Stop
+  - computes frother duty using _pi_update()
+  - computes air duty using _air_update()
+  - applies frother PWM on PIN_PERISTALTIC
+  - applies air PWM on PIN_AIR_PUMP
+  - updates pump_duty, motor_states["air"], air_auto_duty, and auto_state
+  - returns a dict with frother_duty, air_duty, state, dosing_frozen, no_response_cycles
+
+- Modify set_pump_mode():
+  - when switching into auto, reset:
+    pi_integral = 0
+    pi_last_error = 0
+    dosing_frozen = False
+    no_response_cycles = 0
+    last_control_count = None
+    auto_state = "AUTO_RESET"
+    air_auto_duty = air_normal_duty
+  - preserve existing manual/auto validation.
+
+- Modify get_status():
+  - include in pi_controller:
+    auto_state
+    dosing_frozen
+    no_response_cycles
+    control_period
+    max_auto_frother_duty
+    air_auto_duty
+    air_normal_duty
+    air_min_duty
+
+In src/api/main.py:
+- Keep vision_loop() unchanged at 0.5 s.
+- Replace the current auto section of control_loop().
+- In auto mode, call controller.auto_control_from_count(bubble_count) only once every controller.control_period seconds.
+- Between those calls, sleep in 0.5 s increments while checking E-Stop and mode changes.
+- Update:
+  system_state['current_metrics']['pump_duty']
+  system_state['motor_states']['air']
+  using the result from auto_control_from_count().
+- In manual mode, do not call auto_control_from_count().
+- Keep logging and error handling simple.
+
+In src/api/routes.py:
+- Do not rename existing routes.
+- No major changes required.
+- Status already returns hardware_status, so the new get_status() fields should appear automatically.
+
+Expected behaviour example:
+Setpoint = 120, deadband = ±10.
+
+Case 1: count = 60
+- error = 60
+- frother PI produces duty between 0 and 50%
+- air = 65%
+
+Case 2: count = 115
+- inside band
+- frother = 0%
+- air = 65%
+- state = ON_TARGET
+
+Case 3: count = 135
+- above setpoint by 15
+- frother = 0%
+- air = 65%
+
+Case 4: count = 150
+- above setpoint by 30
+- frother = 0%
+- air ≈ 61.7%
+
+Case 5: count = 170
+- above setpoint by 50
+- frother = 0%
+- air = 55%
+
+Case 6: saturation
+- count is below setpoint
+- frother is dosing
+- after 5 sampled control cycles, if count increases by less than 10 each cycle
+- freeze frother dosing at 0%
+- state = FROZEN_NO_RESPONSE
+
+Keep the code student-friendly:
+- clear variable names
+- comments explaining why each control rule exists
+- no complex classes unless necessary
+- no PID derivative term
+- no machine learning
+- no changes to vision processing
+- no breaking changes to manual controls

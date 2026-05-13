@@ -1,6 +1,6 @@
 """
 Unified Vision Processor for Froth Flotation Control System
-Combines camera, preprocessing, detection, and analysis in <300 lines.
+Combines camera, preprocessing, detection, and analysis with optional U-Net segmentation.
 """
 
 import cv2 as cv
@@ -10,6 +10,7 @@ import time
 from typing import Dict, Any, Optional, Tuple
 from collections import deque
 from datetime import datetime
+from .unet_segmenter import UNetSegmenter
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,35 @@ class VisionProcessor:
         min_bubble_area: int = 150,
         max_bubble_area: int = 11000,
         circularity_threshold: float = 0.2,
-        history_size: int = 10
+        history_size: int = 10,
+        use_unet: bool = True,
+        unet_model_path: str = "models/froth_unet.onnx",
+        unet_input_size: int = 256,
+        unet_threshold: float = 0.45,
+        min_unet_coverage: float = 0.02,
+        max_unet_coverage: float = 0.90
     ):
-        """Initialize with contour detection parameters."""
+        """Initialize with contour detection and optional U-Net segmentation.
+        
+        Args:
+            camera_id: USB camera device ID
+            frame_width: Camera frame width (pixels)
+            frame_height: Camera frame height (pixels)
+            camera_fps: Target camera frame rate
+            camera_retries: Max retry attempts for camera init
+            blur_kernel_size: Gaussian blur kernel size
+            morph_kernel_size: Morphological kernel size
+            min_bubble_area: Minimum bubble area filter (pixels²)
+            max_bubble_area: Maximum bubble area filter (pixels²)
+            circularity_threshold: Minimum circularity (0-1)
+            history_size: Size of metrics history buffer
+            use_unet: Enable U-Net ONNX segmentation
+            unet_model_path: Path to ONNX model file
+            unet_input_size: U-Net input size (256x256)
+            unet_threshold: Probability threshold for U-Net mask
+            min_unet_coverage: Minimum valid mask coverage (0-1)
+            max_unet_coverage: Maximum valid mask coverage (0-1)
+        """
         self.camera_id, self.frame_width, self.frame_height = camera_id, frame_width, frame_height
         self.camera_fps, self.camera_retries = camera_fps, camera_retries
         
@@ -41,6 +68,12 @@ class VisionProcessor:
         self.min_bubble_area = min_bubble_area
         self.max_bubble_area = max_bubble_area
         self.circularity_threshold = circularity_threshold
+
+        # U-Net parameters
+        self.use_unet = use_unet
+        self.min_unet_coverage = min_unet_coverage
+        self.max_unet_coverage = max_unet_coverage
+        self.detection_source = "classical"  # Track which segmentation was used
         
         self.cap: Optional[cv.VideoCapture] = None
         self.is_camera_open = False
@@ -51,8 +84,28 @@ class VisionProcessor:
         self.last_frame: Optional[np.ndarray] = None
         self.last_annotated_frame: Optional[np.ndarray] = None
         self.bubble_centroids: list = []  # [(cx, cy, radius), ...]
-        
-        logger.info("VisionProcessor initialized with contour detection")
+
+        # Initialize U-Net segmenter (optional)
+        self.unet = None
+        if self.use_unet:
+            try:
+                self.unet = UNetSegmenter(
+                    model_path=unet_model_path,
+                    input_size=unet_input_size,
+                    threshold=unet_threshold
+                )
+                if self.unet.available():
+                    logger.info("U-Net segmentation enabled")
+                else:
+                    logger.warning("U-Net ONNX model unavailable, will use classical OpenCV pipeline")
+                    self.unet = None
+            except Exception as e:
+                logger.warning(f"U-Net initialization failed: {e}, using classical pipeline")
+                self.unet = None
+        else:
+            logger.info("U-Net segmentation disabled by user")
+
+        logger.info("VisionProcessor initialized with optional U-Net segmentation")
     
     def initialize_camera(self) -> bool:
         """Initialize camera with retry logic."""
@@ -103,45 +156,138 @@ class VisionProcessor:
             logger.error(f"Frame capture error: {e}")
             self.is_camera_open = False
             return False, None
+
+    def _get_classical_mask(self, frame: np.ndarray) -> np.ndarray:
+        """Generate binary mask using classical OpenCV preprocessing.
+        
+        Pipeline:
+        - Grayscale conversion
+        - CLAHE contrast enhancement
+        - Median blur (noise reduction)
+        - Gaussian blur (smoothing)
+        - Adaptive threshold (binary segmentation)
+        - Morphological opening (remove small noise)
+        - Morphological closing (fill holes)
+        
+        Args:
+            frame: BGR input frame
+        
+        Returns:
+            Binary mask (uint8, 255=foreground, 0=background)
+        """
+        gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+
+        # CLAHE for contrast enhancement
+        clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+
+        # Median blur to reduce noise
+        median = cv.medianBlur(enhanced, 5)
+
+        # Gaussian blur for smoothing
+        blur = cv.GaussianBlur(median, (self.blur_kernel_size, self.blur_kernel_size), 0)
+
+        # Adaptive thresholding for better bubble separation
+        binary = cv.adaptiveThreshold(
+            blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv.THRESH_BINARY_INV, 11, 2
+        )
+
+        # Morphological operations to clean up
+        kernel = cv.getStructuringElement(
+            cv.MORPH_ELLIPSE,
+            (self.morph_kernel_size, self.morph_kernel_size)
+        )
+        opening = cv.morphologyEx(binary, cv.MORPH_OPEN, kernel, iterations=2)
+        closing = cv.morphologyEx(opening, cv.MORPH_CLOSE, kernel, iterations=2)
+
+        return closing
+
+    def _get_unet_mask(self, frame: np.ndarray) -> Optional[np.ndarray]:
+        """Generate binary mask using U-Net ONNX with validity checks.
+        
+        Validates mask coverage is within acceptable range before accepting.
+        
+        Args:
+            frame: BGR input frame
+        
+        Returns:
+            Binary mask if valid (255=foreground, 0=background), None if invalid or unavailable
+        """
+        if self.unet is None or not self.unet.available():
+            return None
+
+        try:
+            mask = self.unet.predict_mask(frame)
+            if mask is None:
+                return None
+
+            # Check coverage is within acceptable range
+            mask_size = mask.size
+            nonzero_pixels = np.count_nonzero(mask)
+            coverage = float(nonzero_pixels) / mask_size if mask_size > 0 else 0.0
+
+            if coverage < self.min_unet_coverage or coverage > self.max_unet_coverage:
+                logger.debug(
+                    f"U-Net mask rejected: coverage={coverage:.3f} outside "
+                    f"[{self.min_unet_coverage:.3f}, {self.max_unet_coverage:.3f}]"
+                )
+                return None
+
+            return mask
+
+        except Exception as e:
+            logger.error(f"U-Net mask generation failed: {e}")
+            return None
+
+    def _get_binary_mask(self, frame: np.ndarray) -> np.ndarray:
+        """Get binary mask with fallback strategy.
+        
+        Try U-Net first if enabled, fall back to classical OpenCV.
+        Updates self.detection_source tracking which method was used.
+        
+        Args:
+            frame: BGR input frame
+        
+        Returns:
+            Binary mask (255=foreground, 0=background)
+        """
+        if self.use_unet and self.unet is not None and self.unet.available():
+            mask = self._get_unet_mask(frame)
+            if mask is not None:
+                self.detection_source = "unet"
+                logger.debug("Using U-Net segmentation")
+                return mask
+            logger.debug("U-Net mask invalid, falling back to classical OpenCV")
+
+        self.detection_source = "classical"
+        logger.debug("Using classical OpenCV segmentation")
+        return self._get_classical_mask(frame)
     
     def process_bubbles(self, frame: np.ndarray) -> Dict[str, Any]:
-        """Contour-based bubble detection with morphological processing."""
+        """Contour-based bubble detection with optional U-Net preprocessing.
+        
+        Pipeline:
+        1. Get binary mask (U-Net optional, classical fallback)
+        2. Find contours in binary mask
+        3. Analyze contours with area and circularity filtering
+        4. Create output mask from valid bubble centroids
+        """
         if frame is None or frame.size == 0:
             return {'count': 0, 'diameters': [], 'areas': [], 'avg_diameter': 0.0, 'mask': None}
         
         try:
-            # Enhanced preprocessing: CLAHE → median blur → Gaussian blur
-            gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-            
-            # CLAHE for contrast enhancement
-            clahe = cv.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            enhanced = clahe.apply(gray)
-            
-            # Median blur to reduce noise
-            median = cv.medianBlur(enhanced, 5)
-            
-            # Gaussian blur for smoothing
-            blur = cv.GaussianBlur(median, (self.blur_kernel_size, self.blur_kernel_size), 0)
-            
-            # Adaptive thresholding for better bubble separation
-            binary = cv.adaptiveThreshold(
-                blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv.THRESH_BINARY_INV, 11, 2
-            )
-            
-            # Morphological operations to clean up
-            kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, 
-                                             (self.morph_kernel_size, self.morph_kernel_size))
-            opening = cv.morphologyEx(binary, cv.MORPH_OPEN, kernel, iterations=2)
-            closing = cv.morphologyEx(opening, cv.MORPH_CLOSE, kernel, iterations=2)
-            
+            # Get binary mask with U-Net/classical fallback
+            binary = self._get_binary_mask(frame)
+
             # Find contours
-            contours, _ = cv.findContours(closing, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv.findContours(binary, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             
             # Analyze contours
             bubbles = self._analyze_contours(contours)
             
             # Create mask from valid contours
+            gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
             mask = np.zeros_like(gray, dtype=np.uint8)
             for cx, cy, radius in self.bubble_centroids:
                 cv.circle(mask, (cx, cy), radius, 255, -1)
