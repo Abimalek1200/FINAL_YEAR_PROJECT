@@ -137,7 +137,7 @@ processor.release()
 Run the test script to validate functionality:
 
 ```bash
-python scripts/test_vision_processor.py
+python tests/vision_debug.py
 ```
 
 This will:

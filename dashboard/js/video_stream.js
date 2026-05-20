@@ -201,12 +201,10 @@ class VideoStreamHandler {
         this.ctx.strokeRect(x, y, width, height);
         this.ctx.restore();
     }
-
     clearCanvas() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.ctx.fillStyle = '#000000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        
         // Draw "No Signal" message
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = '24px sans-serif';
@@ -220,7 +218,6 @@ class VideoStreamHandler {
         }
     }
 }
-
 // Initialize video stream handler
 let videoHandler = null;
 
@@ -228,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
     videoHandler = new VideoStreamHandler('videoCanvas');
     videoHandler.initialize();
 });
-
 // Export for use in app.js
 window.updateVideoFrame = (imageData, bubbles, annotated = false) => {
     if (videoHandler) {
@@ -239,13 +235,11 @@ window.updateVideoFrame = (imageData, bubbles, annotated = false) => {
         videoHandler.processFrame(imageData, bubbleData, annotated);
     }
 };
-
 window.toggleVideoPlayback = () => {
     if (videoHandler) {
         return videoHandler.togglePlayback();
     }
 };
-
 window.takeSnapshot = () => {
     if (videoHandler) {
         const success = videoHandler.takeSnapshot();
@@ -256,5 +250,4 @@ window.takeSnapshot = () => {
         }
     }
 };
-
 console.log('Video stream module loaded');

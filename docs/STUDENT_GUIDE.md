@@ -239,7 +239,6 @@ if estop_triggered:
 - Max pump duty: 80% (prevents overdosing)
 - Duty cycle clamping: All values restricted to 0-100%
 - E-Stop check: Runs in control loop at 1 Hz
-- Watchdog timer: Stops pump if vision fails >5s
 
 ## 🛠️ Common Modifications
 

@@ -182,11 +182,15 @@ async def control_loop():
         try:
             # Check E-Stop
             controller.check_estop()
-            
-            # Update pump in auto mode
+
+            # Update pump in auto mode (sampled control)
             if system_state['pump_mode'] == 'auto':
                 bubble_count = system_state['current_metrics']['bubble_count']
-                controller.auto_control_step(bubble_count)
+                result = controller.auto_control_from_count(bubble_count)
+
+                # Update shared state for dashboard/API
+                system_state['current_metrics']['pump_duty'] = float(result.get('frother_duty', 0.0))
+                system_state['motor_states']['air'] = float(result.get('air_duty', 0.0))
 
             # Run anomaly inference every control cycle
             detector = system_state.get('anomaly_detector')
@@ -231,8 +235,20 @@ async def control_loop():
                     'timestamp': metrics.get('timestamp', ''),
                     'sequence': sequence
                 }
-            
-            await asyncio.sleep(1.0)  # 1 Hz control rate
+
+            # In auto mode, hold the last decision for the control period
+            if system_state['pump_mode'] == 'auto':
+                wait_time = 0.0
+                while wait_time < controller.control_period and system_state['running']:
+                    await asyncio.sleep(0.5)
+                    wait_time += 0.5
+                    controller.check_estop()
+
+                    # Stop auto timing loop if mode changes
+                    if system_state['pump_mode'] != 'auto':
+                        break
+            else:
+                await asyncio.sleep(1.0)  # 1 Hz control rate in manual mode
         except Exception as e:
             logger.error(f"Control loop error: {e}")
             await asyncio.sleep(1)

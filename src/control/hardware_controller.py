@@ -1,8 +1,7 @@
-"""Unified hardware control: SIMO auto/manual control + E-Stop (GPIO 12-15,22)."""
+"""Unified hardware control: auto/manual control + E-Stop (GPIO 12-15,22)."""
 
 import logging
-import time
-from typing import Dict, Optional
+from typing import Dict
 
 try:
     import lgpio
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class HardwareController:
-    """Unified control: SIMO auto loop + manual overrides."""
+    """Unified control: PI auto loop + manual overrides."""
     
     PIN_PERISTALTIC, PIN_AGITATOR, PIN_AIR_PUMP, PIN_FEED_PUMP, PIN_ESTOP = 12, 13, 14, 15, 22
     # Indicator outputs requested by operator
@@ -27,24 +26,9 @@ class HardwareController:
     PIN_LED_RED, PIN_LED_AMBER, PIN_LED_GREEN, PIN_LED_WHITE = 23, 24, 25, 8
     PWM_FREQUENCY = 3000
 
-    # SIMO auto-control defaults (easy to tune)
-    DEADBAND = 5
-    DOSING_DURATION = 5.0
-    STABILIZATION_WAIT = 15.0
-
-    DOSING_MIN_PWM = 50.0
-    DOSING_MAX_PWM = 100.0
-    DOSING_ERROR_MIN = 10.0
-    DOSING_ERROR_MAX = 60.0
-
-    AIR_MAX_PWM = 60.0
-    AIR_MIN_PWM = 50.0
-    AIR_ERROR_MIN = 10.0
-    AIR_ERROR_MAX = 45.0
-    
     def __init__(self, target_bubble_count: int = 85,
                  max_pump_duty: float = 80.0, estop_enabled: bool = True):
-        """Initialize controller with SIMO setpoint, limits, and safety settings."""
+        """Initialize controller with setpoint, limits, and safety settings."""
         self.target_bubble_count = target_bubble_count
         self.max_pump_duty, self.estop_enabled = max_pump_duty, estop_enabled
         
@@ -54,12 +38,33 @@ class HardwareController:
         # LED state flags
         self.led_states = {'red': False, 'amber': False, 'green': False, 'white': False}
 
-        # SIMO auto-control state
-        self.auto_dosing_active = False
-        self.auto_dose_end_time = 0.0
-        self.auto_next_dose_allowed_time = 0.0
-        self.auto_last_dosing_pwm = 0.0
-        
+        # PI controller defaults (student-friendly auto mode)
+        self.pi_kp = 1.0
+        self.pi_ki = 0.001
+        self.pi_integral = 0.0
+        self.pi_last_error = 0.0
+
+        # Requested auto-control attributes
+        self.control_period = 15.0
+        self.frother_deadband = 10.0
+        self.max_auto_frother_duty = 50.0
+        self.running_frother_duty = 0.0
+        self.integral_limit = 20.0
+        self.integral_bleed_on_target = 0.7
+        self.integral_bleed_above_target = 0.5
+        self.dosing_frozen = False
+        self.no_response_cycles = 0
+        self.no_response_limit = 5
+        self.response_threshold = 10.0
+        self.min_active_duty = 2.0
+        self.last_control_count = None
+        self.auto_state = "MANUAL"
+        self.air_normal_duty = 65.0
+        self.air_min_duty = 55.0
+        self.air_reduce_start = 20.0
+        self.air_full_reduce = 50.0
+        self.air_auto_duty = 65.0
+
         self._initialize_gpio()
     
     def _initialize_gpio(self) -> bool:
@@ -215,22 +220,26 @@ class HardwareController:
             pass
     
     def set_pump_mode(self, mode: str):
-        """Switch pump mode: 'auto' (SIMO) or 'manual' (direct PWM)."""
+        """Switch pump mode: 'auto' (PI) or 'manual' (direct PWM)."""
         if mode not in ('auto', 'manual'):
             raise ValueError(f"Invalid mode: {mode}")
         old_mode = self.pump_mode
         self.pump_mode = mode
         if mode == 'auto' and old_mode != 'auto':
-            self.auto_dosing_active = False
-            self.auto_dose_end_time = 0.0
-            self.auto_next_dose_allowed_time = 0.0
-            self.auto_last_dosing_pwm = 0.0
+            # Reset PI controller and no-response protection when entering auto
+            self.pi_integral = 0.0
+            self.pi_last_error = 0.0
+            self.dosing_frozen = False
+            self.no_response_cycles = 0
+            self.last_control_count = None
+            self.auto_state = "AUTO_RESET"
 
-            # Auto mode default: air at maximum allowed auto value
-            self.motor_states['air'] = self.AIR_MAX_PWM
-            self._set_pwm(self.PIN_AIR_PUMP, self.AIR_MAX_PWM)
+            # Default air duty for auto mode
+            self.air_auto_duty = self.air_normal_duty
+            self.motor_states['air'] = self.air_auto_duty
+            self._set_pwm(self.PIN_AIR_PUMP, self.air_auto_duty)
 
-            logger.info("AUTO mode enabled - SIMO control reset, air set to 45%")
+            logger.info("AUTO mode enabled - PI control reset, air set to normal duty")
         else:
             logger.info(f"{mode.upper()} mode activated")
     
@@ -250,100 +259,141 @@ class HardwareController:
         self.pump_duty = duty
         self._set_pwm(self.PIN_PERISTALTIC, duty)
 
-    @staticmethod
-    def _map_linear(value: float, in_min: float, in_max: float, out_min: float, out_max: float) -> float:
-        """Linearly map value from one range to another, with input clamped."""
-        if in_max <= in_min:
-            return out_min
-        clamped = max(in_min, min(in_max, value))
-        ratio = (clamped - in_min) / (in_max - in_min)
-        return out_min + ratio * (out_max - out_min)
+    def _pi_update(self, measured_count: float) -> float:
+        """Sampled PI control for frother dosing (auto mode only).
 
-    def map_dosing_rate(self, error_bubbles: float) -> float:
-        """Map low-count error (10-60) to dosing PWM (10-80%), then clamp by safety max."""
-        duty = self._map_linear(
-            error_bubbles,
-            self.DOSING_ERROR_MIN,
-            self.DOSING_ERROR_MAX,
-            self.DOSING_MIN_PWM,
-            self.DOSING_MAX_PWM
-        )
-        return max(self.DOSING_MIN_PWM, min(self.max_pump_duty, duty))
-
-    def map_air_rate(self, error_bubbles: float) -> float:
-        """Map high-count error (10-45) to air PWM (45 down to 35%) with strict bounds."""
-        duty = self._map_linear(
-            error_bubbles,
-            self.AIR_ERROR_MIN,
-            self.AIR_ERROR_MAX,
-            self.AIR_MAX_PWM,
-            self.AIR_MIN_PWM
-        )
-        return max(self.AIR_MIN_PWM, min(self.AIR_MAX_PWM, duty))
-
-    def auto_control_step(self, bubble_count: float, now: Optional[float] = None):
-        """Run one non-blocking SIMO control step in auto mode.
-
-        Rules:
-        - Deadband ±5 around setpoint: hold current states.
-        - Below setpoint: dose for 5s at mapped PWM (10-80), then wait 15s before next dose.
-        - Above setpoint: reduce air duty from 45% toward 35% immediately.
-        - In auto mode, air defaults to 45% when not reduced.
+        Uses a deadband and integral bleeding to avoid overdosing.
         """
-        if self.pump_mode != 'auto' or self.estop_triggered:
-            return
+        setpoint = float(self.target_bubble_count)
+        measured = float(measured_count)
+        error = setpoint - measured
 
-        t_now = time.monotonic() if now is None else now
-        error = float(self.target_bubble_count) - float(bubble_count)
+        # Frozen state: hold frother at 0 until auto is reset
+        if self.dosing_frozen:
+            self.auto_state = "FROZEN_NO_RESPONSE"
+            return 0.0
 
-        # Complete active dosing window
-        if self.auto_dosing_active:
-            if t_now < self.auto_dose_end_time:
-                self.pump_duty = self.auto_last_dosing_pwm
-                self._set_pwm(self.PIN_PERISTALTIC, self.auto_last_dosing_pwm)
+        # Inside deadband: stop dosing and gently bleed integral
+        if abs(error) <= self.frother_deadband:
+            self.pi_integral = max(0.0, self.pi_integral * self.integral_bleed_on_target)
+            self.auto_state = "ON_TARGET"
+            self.no_response_cycles = 0
+            return 0.0
+
+        # Above target: stop dosing and bleed integral faster
+        if error < -self.frother_deadband:
+            self.pi_integral = max(0.0, self.pi_integral * self.integral_bleed_above_target)
+            return 0.0
+
+        # Below target: PI dosing
+        full_scale_error = max(1.0, setpoint)
+        error_ratio = max(0.0, min(1.0, error / full_scale_error))
+        proportional_duty = self.pi_kp * self.max_auto_frother_duty * error_ratio
+
+        proposed_integral = self.pi_integral + (self.pi_ki * error * self.control_period)
+        proposed_integral = max(0.0, min(self.integral_limit, proposed_integral))
+
+        raw_duty = proportional_duty + proposed_integral
+        # Anti-windup: only accept integral growth when not saturated
+        if raw_duty <= self.max_auto_frother_duty:
+            self.pi_integral = proposed_integral
+        else:
+            raw_duty = proportional_duty + self.pi_integral
+
+        duty = max(0.0, min(self.max_auto_frother_duty, raw_duty))
+        self.auto_state = "FROTHER_PI_DOSING"
+        return duty
+
+    def _air_update(self, measured_count: float) -> float:
+        """Automatic air correction when bubble count is clearly above setpoint."""
+        setpoint = float(self.target_bubble_count)
+        overshoot = float(measured_count) - setpoint
+
+        if overshoot <= self.air_reduce_start:
+            return self.air_normal_duty
+        if overshoot >= self.air_full_reduce:
+            return self.air_min_duty
+
+        # Linear reduction between reduce_start and full_reduce
+        ratio = (overshoot - self.air_reduce_start) / (self.air_full_reduce - self.air_reduce_start)
+        return self.air_normal_duty - (ratio * (self.air_normal_duty - self.air_min_duty))
+
+    def auto_control_from_count(self, measured_count: float) -> Dict:
+        """Run sampled auto control from a bubble count measurement.
+
+        Returns a summary dict for API state updates.
+        """
+        if self.pump_mode != 'auto':
+            return {
+                'frother_duty': self.pump_duty,
+                'air_duty': self.motor_states.get('air', 0.0),
+                'state': self.auto_state,
+                'dosing_frozen': self.dosing_frozen,
+                'no_response_cycles': self.no_response_cycles
+            }
+
+        if self.check_estop():
+            return {
+                'frother_duty': 0.0,
+                'air_duty': 0.0,
+                'state': 'ESTOP',
+                'dosing_frozen': self.dosing_frozen,
+                'no_response_cycles': self.no_response_cycles
+            }
+
+        previous_running_duty = self.running_frother_duty
+
+        # Compute frother duty (PI) and air duty (auto correction)
+        frother_duty = self._pi_update(measured_count)
+        air_duty = self._air_update(measured_count)
+
+        # No-response protection only when below target band
+        below_band = float(measured_count) < (float(self.target_bubble_count) - self.frother_deadband)
+        if below_band and not self.dosing_frozen:
+            if self.last_control_count is not None:
+                improvement = float(measured_count) - float(self.last_control_count)
+                if previous_running_duty >= self.min_active_duty and improvement < self.response_threshold:
+                    self.no_response_cycles += 1
+                elif improvement >= self.response_threshold:
+                    self.no_response_cycles = 0
+            self.last_control_count = float(measured_count)
+
+            if self.no_response_cycles >= self.no_response_limit:
+                self.dosing_frozen = True
+                self.pi_integral = 0.0
+                frother_duty = 0.0
+                self.auto_state = "FROZEN_NO_RESPONSE"
+        elif not below_band:
+            # Reset counter when on/above target band
+            self.no_response_cycles = 0
+            self.last_control_count = float(measured_count)
+
+        # Set air-state labels when count is above target band
+        if not self.dosing_frozen and float(measured_count) > (float(self.target_bubble_count) + self.frother_deadband):
+            overshoot = float(measured_count) - float(self.target_bubble_count)
+            if overshoot <= self.air_reduce_start:
+                self.auto_state = "AIR_NORMAL"
+            elif overshoot >= self.air_full_reduce:
+                self.auto_state = "AIR_MINIMUM"
             else:
-                self.auto_dosing_active = False
-                self.pump_duty = 0.0
-                self._set_pwm(self.PIN_PERISTALTIC, 0.0)
-                self.auto_next_dose_allowed_time = t_now + self.STABILIZATION_WAIT
-                logger.info(
-                    f"Auto dosing complete. Stabilization wait: {self.STABILIZATION_WAIT:.1f}s"
-                )
+                self.auto_state = "AIR_REDUCING"
 
-        # Deadband: no corrective action, keep current state
-        if abs(error) <= self.DEADBAND:
-            return
+        # Apply outputs
+        self.running_frother_duty = frother_duty
+        self.pump_duty = frother_duty
+        self.air_auto_duty = air_duty
+        self.motor_states['air'] = air_duty
 
-        # Below setpoint: dosing logic + default air max
-        if error > 0:
-            self.motor_states['air'] = self.AIR_MAX_PWM
-            self._set_pwm(self.PIN_AIR_PUMP, self.AIR_MAX_PWM)
+        self._set_pwm(self.PIN_PERISTALTIC, frother_duty)
+        self._set_pwm(self.PIN_AIR_PUMP, air_duty)
 
-            can_start_dose = (not self.auto_dosing_active) and (t_now >= self.auto_next_dose_allowed_time)
-            if can_start_dose:
-                dosing_pwm = self.map_dosing_rate(error)
-                self.auto_last_dosing_pwm = dosing_pwm
-                self.auto_dosing_active = True
-                self.auto_dose_end_time = t_now + self.DOSING_DURATION
-
-                self.pump_duty = dosing_pwm
-                self._set_pwm(self.PIN_PERISTALTIC, dosing_pwm)
-                logger.info(
-                    f"Auto dosing started: bubble_count={bubble_count:.1f}, "
-                    f"error={error:.1f}, duty={dosing_pwm:.1f}%, duration={self.DOSING_DURATION:.1f}s"
-                )
-            return
-
-        # Above setpoint: immediate air reduction, no extra wait
-        high_error = abs(error)
-        new_air_pwm = self.map_air_rate(high_error)
-        self.motor_states['air'] = new_air_pwm
-        self._set_pwm(self.PIN_AIR_PUMP, new_air_pwm)
-
-        # Ensure dosing pump is off when count is high and no active dosing window
-        if not self.auto_dosing_active:
-            self.pump_duty = 0.0
-            self._set_pwm(self.PIN_PERISTALTIC, 0.0)
+        return {
+            'frother_duty': frother_duty,
+            'air_duty': air_duty,
+            'state': self.auto_state,
+            'dosing_frozen': self.dosing_frozen,
+            'no_response_cycles': self.no_response_cycles
+        }
     
     def set_auto_setpoint(self, setpoint: int):
         """Update AUTO-mode target bubble count setpoint."""
@@ -383,13 +433,18 @@ class HardwareController:
             'pump_mode': self.pump_mode,
             'pump_duty': self.pump_duty,
             'motors': self.motor_states.copy(),
-            'auto_control': {
+            'pi_controller': {
                 'setpoint': self.target_bubble_count,
-                'deadband': self.DEADBAND,
-                'dosing_duration_s': self.DOSING_DURATION,
-                'stabilization_wait_s': self.STABILIZATION_WAIT,
-                'auto_dosing_active': self.auto_dosing_active,
-                'next_dose_allowed_in_s': max(0.0, self.auto_next_dose_allowed_time - time.monotonic())
+                'kp': self.pi_kp,
+                'ki': self.pi_ki,
+                'auto_state': self.auto_state,
+                'dosing_frozen': self.dosing_frozen,
+                'no_response_cycles': self.no_response_cycles,
+                'control_period': self.control_period,
+                'max_auto_frother_duty': self.max_auto_frother_duty,
+                'air_auto_duty': self.air_auto_duty,
+                'air_normal_duty': self.air_normal_duty,
+                'air_min_duty': self.air_min_duty
             },
             'estop_triggered': self.estop_triggered,
             'initialized': self.is_initialized
