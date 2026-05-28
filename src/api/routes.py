@@ -1,6 +1,8 @@
 """REST API routes: metrics, control, status."""
 
 import logging
+from pathlib import Path
+
 import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -204,16 +206,17 @@ async def train_anomaly_model(request: TrainModelRequest):
         training_data = np.array(training_rows, dtype=float)
         detector.train(training_data)
 
-        model_path = "models/anomaly_detector.pkl"
+        project_root = Path(__file__).resolve().parents[2]
+        model_path = project_root / "models" / "anomaly_detector.pkl"
         if request.save_model:
-            detector.save(model_path)
+            detector.save(str(model_path))
 
         return {
             "status": "ok",
             "message": "Anomaly model trained successfully",
             "sample_count": sample_count,
             "saved": bool(request.save_model),
-            "model_path": model_path if request.save_model else None
+            "model_path": str(model_path) if request.save_model else None
         }
     except HTTPException:
         raise

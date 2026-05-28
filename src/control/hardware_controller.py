@@ -1,4 +1,4 @@
-"""Unified hardware control: auto/manual control + E-Stop (GPIO 12-15,22)."""
+"""Unified hardware control: auto/manual control + E-Stop (GPIO 12-15,2)."""
 
 import logging
 from typing import Dict
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class HardwareController:
     """Unified control: PI auto loop + manual overrides."""
     
-    PIN_PERISTALTIC, PIN_AGITATOR, PIN_AIR_PUMP, PIN_FEED_PUMP, PIN_ESTOP = 12, 13, 14, 15, 22
+    PIN_PERISTALTIC, PIN_AGITATOR, PIN_AIR_PUMP, PIN_FEED_PUMP, PIN_ESTOP = 12, 13, 14, 15, 2
     # Indicator outputs requested by operator
     # Assign LEDs per user request:
     # GPIO 23 - RED: ON when abnormal condition detected
@@ -26,7 +26,7 @@ class HardwareController:
     PIN_LED_RED, PIN_LED_AMBER, PIN_LED_GREEN, PIN_LED_WHITE = 23, 24, 25, 8
     PWM_FREQUENCY = 3000
 
-    def __init__(self, target_bubble_count: int = 85,
+    def __init__(self, target_bubble_count: int = 100,
                  max_pump_duty: float = 80.0, estop_enabled: bool = True):
         """Initialize controller with setpoint, limits, and safety settings."""
         self.target_bubble_count = target_bubble_count
@@ -47,8 +47,8 @@ class HardwareController:
         # Requested auto-control attributes
         self.control_period = 15.0
         self.frother_deadband = 10.0
-        self.max_auto_frother_duty = 50.0
-        self.running_frother_duty = 0.0
+        self.max_auto_frother_duty = 80.0
+        self.running_frother_duty = 40.0
         self.integral_limit = 20.0
         self.integral_bleed_on_target = 0.7
         self.integral_bleed_above_target = 0.5
@@ -121,7 +121,7 @@ class HardwareController:
             estop_state = lgpio.gpio_read(self.chip, self.PIN_ESTOP)
             self.estop_triggered = (estop_state == 0)
             if self.estop_triggered:
-                logger.critical("EMERGENCY STOP TRIGGERED")
+                logger.critical("🚨 EMERGENCY STOP TRIGGERED - Pin 2 is LOW (0V)")
                 self._emergency_shutdown()
             return self.estop_triggered
         except Exception as e:

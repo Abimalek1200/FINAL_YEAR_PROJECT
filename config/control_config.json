@@ -2,24 +2,24 @@
   "pi_controller": {
     "kp": 0.5,
     "ki": 0.05,
-    "setpoint": 85
+    "setpoint": 100
   },
   "frother_pump": {
     "pin": 12,
-    "frequency_hz": 1000,
+    "frequency_hz": 3000,
     "max_duty_cycle": 80
   },
   "agitator": {
     "pin": 13,
-    "frequency_hz": 1000
+    "frequency_hz": 3000
   },
   "air_pump": {
     "pin": 14,
-    "frequency_hz": 1000
+    "frequency_hz": 3000
   },
   "feed_pump": {
     "pin": 15,
-    "frequency_hz": 1000
+    "frequency_hz": 3000
   },
-  "estop_pin": 22
+  "estop_pin": 2
 }

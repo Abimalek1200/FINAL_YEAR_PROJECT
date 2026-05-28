@@ -13,10 +13,11 @@ from fastapi.responses import FileResponse
 
 from . import routes, websocket
 from .metrics_smoothing import TimeWindowMovingAverage
+from time import monotonic
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TARGET_SETPOINT = 85
+DEFAULT_TARGET_SETPOINT = 100
 DEFAULT_MAX_PUMP_DUTY = 80.0
 
 
@@ -47,6 +48,7 @@ system_state = {
     'anomaly_detector': None,
     'data_manager': None,
     'running': False,
+    'camera_present': None,
     'current_metrics': {
         'bubble_count': 0,
         'avg_bubble_size': 0.0,
@@ -104,14 +106,17 @@ async def lifespan(app: FastAPI):
         system_state['data_manager'] = DataManager(db_path="data/flotation.db")
 
         # Load existing trained model if available
-        model_path = "models/anomaly_detector.pkl"
-        loaded = system_state['anomaly_detector'].load(model_path)
+        project_root = Path(__file__).resolve().parents[2]
+        model_path = project_root / "models" / "anomaly_detector.pkl"
+        loaded = system_state['anomaly_detector'].load(str(model_path))
         if loaded:
             logger.info(f"✓ Loaded trained anomaly model from {model_path}")
             system_state['anomaly_status']['trained'] = True
             system_state['anomaly_status']['message'] = 'Trained model loaded'
         else:
-            logger.info("No trained anomaly model loaded; detector will run untrained until training is triggered")
+            logger.info(
+                "No trained anomaly model loaded; detector will run untrained until training is triggered"
+            )
 
         logger.info("✓ ML components initialized")
         
@@ -148,10 +153,18 @@ async def vision_loop():
     """Continuous vision processing loop with smoothed bubble count publishing."""
     vision = system_state['vision_processor']
     bubble_count_ma = system_state['bubble_count_ma']
+
+    last_training_save_time = 0.0
+    training_sample_interval = 5.0
     
     while system_state['running']:
         try:
             metrics = vision.get_metrics()
+            controller = system_state.get('hardware_controller')
+
+            if controller:
+                controller.set_camera_present(bool(metrics.get('success', False)))
+
             if metrics['success']:
                 # Smooth bubble_count over time window before publishing
                 raw_count = metrics.get('bubble_count', 0)
@@ -165,12 +178,20 @@ async def vision_loop():
 
                 # Save metrics for anomaly-model training dataset
                 data_manager = system_state.get('data_manager')
-                if data_manager is not None:
+                now = monotonic()
+
+                if data_manager is not None and now - last_training_save_time >= training_sample_interval:
                     data_manager.save_metrics(system_state['current_metrics'])
+                    last_training_save_time = now
             
             await asyncio.sleep(0.2)  # 5 FPS processing rate
         except Exception as e:
             logger.error(f"Vision loop error: {e}")
+            
+            controller = system_state.get('hardware_controller')
+            if controller:
+                controller.set_camera_present(False)
+
             await asyncio.sleep(1)
 
 
@@ -180,8 +201,12 @@ async def control_loop():
     
     while system_state['running']:
         try:
-            # Check E-Stop
-            controller.check_estop()
+            # Check E-Stop (returns True if triggered)
+            if controller.check_estop():
+                logger.critical("Control loop halted: E-STOP is active")
+                # Stop control loop and wait 1 second before checking again
+                await asyncio.sleep(1.0)
+                continue
 
             # Update pump in auto mode (sampled control)
             if system_state['pump_mode'] == 'auto':
@@ -235,6 +260,9 @@ async def control_loop():
                     'timestamp': metrics.get('timestamp', ''),
                     'sequence': sequence
                 }
+
+                abnormal_led = trained and status == 'critical'
+                controller.set_abnormal(abnormal_led)
 
             # In auto mode, hold the last decision for the control period
             if system_state['pump_mode'] == 'auto':

@@ -1,0 +1,4 @@
+src/api/__pycache__/main.cpython-313.pyc
+src/vision/__pycache__/vision_processor.cpython-313.pyc
+logs/flotation.log
+data/flotation.db

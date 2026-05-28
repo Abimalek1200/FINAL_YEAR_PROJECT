@@ -21,9 +21,9 @@ const AppState = {
         anomalyStatus: 'NORMAL'
     },
     piController: {
-        setpoint: 85,
-        kp: 0.5,
-        ki: 0.05,
+        setpoint: 100,
+        kp: 1.0,
+        ki: 0.001,
         output: 0,
         error: 0
     },
@@ -44,6 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
     startClock();
     startUptimeCounter();
     startPolling(); // Start periodic API polling as fallback
+
+    fetchStatus(); // immediately sync dashboard mode from backend
 });
 
 // ========================================
@@ -213,31 +215,39 @@ function setupEventListeners() {
 // ========================================
 // MODE SWITCHING
 // ========================================
-
-function switchMode(mode) {
+function applyModeUI(mode) {
     AppState.mode = mode;
-    
-    // Update UI
+
     document.getElementById('autoModeBtn').classList.toggle('active', mode === 'auto');
     document.getElementById('manualModeBtn').classList.toggle('active', mode === 'manual');
-    
-    // Show/hide control panels
+
     document.getElementById('manualControls').style.display = mode === 'manual' ? 'block' : 'none';
     document.getElementById('autoControls').style.display = mode === 'auto' ? 'block' : 'none';
-    
-    // Send mode change to backend via REST API
-    setPumpMode(mode).catch(err => {
-        console.error('Failed to switch pump mode:', err);
-        // Revert UI on error
-        AppState.mode = mode === 'auto' ? 'manual' : 'auto';
-        updateModeDisplay();
-    });
-    
-    addAlert('info', `Switched to ${mode.toUpperCase()} mode`);
+}
+
+function switchMode(mode) {
+    const previousMode = AppState.mode;
+
+    // Update local UI immediately
+    applyModeUI(mode);
+
+    // Send user-requested mode change to backend
+    setPumpMode(mode)
+        .then((result) => {
+            const confirmedMode = result.mode || mode;
+            applyModeUI(confirmedMode);
+            addAlert('info', `Switched to ${confirmedMode.toUpperCase()} mode`);
+        })
+        .catch(err => {
+            console.error('Failed to switch pump mode:', err);
+
+            // Revert UI on error
+            applyModeUI(previousMode);
+        });
 }
 
 function updateModeDisplay() {
-    switchMode(AppState.mode);
+    applyModeUI(AppState.mode);
 }
 
 // ========================================
@@ -628,7 +638,7 @@ async function triggerModelTraining() {
         const response = await fetch('/api/ml/train', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sample_limit: 1000, save_model: true })
+            body: JSON.stringify({ sample_limit: 500, save_model: true })
         });
 
         const payload = await response.json();
@@ -713,7 +723,7 @@ function updateMetrics(metrics) {
     
     // Froth coverage
     if (metrics.froth_coverage !== undefined) {
-        const coverage = Math.round(metrics.froth_coverage * 1000);
+        const coverage = Math.round(metrics.froth_coverage * 100);
         document.getElementById('frothCoverage').textContent = coverage;
     }
     
@@ -735,6 +745,19 @@ function updateMetrics(metrics) {
 }
 
 function updateControlState(data) {
+
+     // Sync manual/auto mode from backend so all dashboards follow the real system state
+    const serverMode = data?.pump_mode ?? data?.hardware_status?.pump_mode;
+
+    if (serverMode === 'auto' || serverMode === 'manual') {
+        if (AppState.mode !== serverMode) {
+            applyModeUI(serverMode);
+            addAlert('info', `Mode synced to ${serverMode.toUpperCase()}`);
+        } else {
+            applyModeUI(serverMode);
+        }
+    }
+
     // SIMO output display: show current peristaltic pump duty
     const simoOutput = data?.hardware_status?.pump_duty ?? data?.pump_duty;
     if (simoOutput !== undefined) {
