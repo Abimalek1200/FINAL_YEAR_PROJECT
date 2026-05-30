@@ -21,7 +21,7 @@ const AppState = {
         anomalyStatus: 'NORMAL'
     },
     piController: {
-        setpoint: 100,
+        setpoint: null,
         kp: 1.0,
         ki: 0.001,
         output: 0,
@@ -147,11 +147,18 @@ function initializeUI() {
     // Set default mode display
     updateModeDisplay();
 
-    // Initialize target bubble count display from dashboard state
-    const setpointEl = document.getElementById('piSetpointDisplay');
-    if (setpointEl) {
-        setpointEl.textContent = String(AppState.piController.setpoint);
-    }
+    // Seed setpoint from backend (single source: config/control_config.json)
+    fetch('/api/status')
+        .then(r => r.json())
+        .then(data => {
+            const sp = data?.hardware_status?.pi_controller?.setpoint;
+            if (sp !== undefined) {
+                AppState.piController.setpoint = sp;
+                const el = document.getElementById('piSetpointDisplay');
+                if (el) el.textContent = String(sp);
+            }
+        })
+        .catch(() => {/* setpoint will be populated on first WebSocket control message */});
     
     // Initialize device controls
     updateDeviceUI('pump');
