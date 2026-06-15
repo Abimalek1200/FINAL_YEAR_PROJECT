@@ -297,7 +297,8 @@ class VisionProcessor:
                 'diameters': bubbles['diameters'],
                 'areas': bubbles['areas'],
                 'avg_diameter': bubbles['avg_diameter'],
-                'mask': mask
+                'mask': mask,
+                'segmentation_mask': binary  # ? add: the raw U-Net/classical mask for coverage
             }
         except Exception as e:
             logger.error(f"Bubble processing error: {e}")
@@ -372,12 +373,13 @@ class VisionProcessor:
             diameters = bubble_data['diameters']
             areas = bubble_data['areas']
             mask = bubble_data.get('mask')
-            
+            coverage_mask = bubble_data.get('segmentation_mask') or bubble_data.get('mask')
+
             # Coverage ratio
             coverage = 0.0
-            if mask is not None:
+            if coverage_mask is not None:
                 total_pixels = frame.shape[0] * frame.shape[1]
-                bubble_pixels = np.count_nonzero(mask)
+                bubble_pixels = np.count_nonzero(coverage_mask)
                 coverage = float(bubble_pixels) / total_pixels if total_pixels > 0 else 0.0
             
             # Size metrics
@@ -407,26 +409,36 @@ class VisionProcessor:
             }
     
     def _calculate_stability(self, avg_diameter: float, size_std: float, count: int) -> float:
-        """Calculate stability score (0-1) from size uniformity, temporal consistency, density."""
-        # Size uniformity
-        size_uniformity = 1.0 / (1.0 + size_std / avg_diameter) if avg_diameter > 0 else 0.0
+        """Calculate stability score (0-1) from size uniformity, temporal consistency, density.
         
-        # Temporal consistency
-        if len(self.bubble_count_history) >= 3:
+        Uses exp(-k*cv) sensitivity so small changes in variation are visible
+        across the full 0-1 range rather than compressing near 1.0.
+        """
+        # Size uniformity � penalises variation relative to mean diameter
+        # k=4: cv of 0.10 ? 0.67, cv of 0.25 ? 0.37, cv of 0.50 ? 0.14
+        cv_size = size_std / avg_diameter if avg_diameter > 0 else 1.0
+        size_uniformity = float(np.exp(-4.0 * cv_size))
+
+        # Temporal consistency � requires full history window before contributing
+        # k=6: cv of 0.05 ? 0.74, cv of 0.15 ? 0.41, cv of 0.30 ? 0.17
+        history_len = len(self.bubble_count_history)
+        if history_len >= self.bubble_count_history.maxlen:
             count_std = float(np.std(list(self.bubble_count_history)))
             count_mean = float(np.mean(list(self.bubble_count_history)))
-            count_consistency = 1.0 / (1.0 + count_std / count_mean) if count_mean > 0 else 0.0
+            cv_count = count_std / count_mean if count_mean > 0 else 1.0
+            count_consistency = float(np.exp(-6.0 * cv_count))
         else:
-            count_consistency = 0.5
-        
-        # Density score (optimal: 50-200 bubbles)
+            # Not enough history yet � hold at 0.0 so it doesn't inflate score
+            count_consistency = 0.0
+
+        # Density score (optimal: 50-200 bubbles) � unchanged
         if count < 50:
             density_score = count / 50.0
         elif count > 200:
             density_score = max(0.5, 1.0 - (count - 200) / 200.0)
         else:
             density_score = 1.0
-        
+
         stability = 0.4 * size_uniformity + 0.4 * count_consistency + 0.2 * density_score
         return np.clip(stability, 0.0, 1.0)
     
