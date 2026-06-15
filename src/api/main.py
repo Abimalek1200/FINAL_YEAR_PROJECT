@@ -179,8 +179,9 @@ async def vision_loop():
                 # Save metrics for anomaly-model training dataset
                 data_manager = system_state.get('data_manager')
                 now = monotonic()
+                air_running = system_state['motor_states'].get('air', 0.0) > 0.0 # only record training data when the air pump agitation is on
 
-                if data_manager is not None and now - last_training_save_time >= training_sample_interval:
+                if data_manager is not None and air_running and now - last_training_save_time >= training_sample_interval:
                     data_manager.save_metrics(system_state['current_metrics'])
                     last_training_save_time = now
             
@@ -232,15 +233,27 @@ async def control_loop():
                 score = float(detector.get_anomaly_score(features))
                 trained = bool(detector.is_trained)
 
-                if not trained:
-                    status = 'normal'
-                    message = 'Detector not trained'
+                count    = float(metrics.get('bubble_count', 0.0))
+                coverage = float(metrics.get('froth_coverage', 0.0))
+                setpoint = float(controller.target_bubble_count)
+
+                if count < 5 and coverage < 0.05:
+                    status, message = 'critical', 'Camera obstructed or no froth detected'
+                elif count < 0.30 * setpoint:
+                    status, message = 'critical', f'Bubble count critically low ({int(count)} vs target {int(setpoint)})'
+                elif count > 2.50 * setpoint:
+                    status, message = 'critical', f'Bubble count critically high ({int(count)} vs target {int(setpoint)})'
+                elif count < 0.60 * setpoint:
+                    status, message = 'warning', f'Bubble count low ({int(count)} vs target {int(setpoint)})'
+                elif count > 1.70 * setpoint:
+                    status, message = 'warning', f'Bubble count high ({int(count)} vs target {int(setpoint)})'
+                elif not trained:
+                    status, message = 'normal', 'Detector not trained'
                 elif prediction == -1:
                     status = 'critical' if score <= -0.20 else 'warning'
                     message = f"Anomaly detected (score={score:.3f})"
                 else:
-                    status = 'normal'
-                    message = 'Normal operation'
+                    status, message = 'normal', 'Normal operation'
 
                 previous = system_state.get('anomaly_status', {})
                 changed = (

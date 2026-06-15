@@ -848,22 +848,30 @@ function updateControlState(data) {
 
 function handleAnomaly(data) {
     const statusEl = document.getElementById('anomalyStatus');
-    const cardEl = document.getElementById('anomalyCard');
     const timeEl = document.getElementById('anomalyTime');
-    
+
     if (data.status) {
+        const previousStatus = AppState.metrics.anomalyStatus;   // ? read previous
+        AppState.metrics.anomalyStatus = data.status;             // ? update state
+
         statusEl.textContent = data.status.toUpperCase();
         statusEl.className = 'metric-value anomaly-status';
-        
-        if (data.status === 'warning') {
-            statusEl.classList.add('warning');
-            addAlert('warning', data.message || 'Anomaly detected - Warning level');
-        } else if (data.status === 'critical') {
-            statusEl.classList.add('critical');
-            addAlert('error', data.message || 'Anomaly detected - Critical level');
+
+        // Only add alert when status actually changes, not on every push
+        if (data.status !== previousStatus) {
+            if (data.status === 'warning') {
+                statusEl.classList.add('warning');
+                addAlert('warning', data.message || 'Anomaly detected - Warning level');
+            } else if (data.status === 'critical') {
+                statusEl.classList.add('critical');
+                addAlert('error', data.message || 'Anomaly detected - Critical level');
+            } else if (data.status === 'normal' && previousStatus !== 'normal') {
+                statusEl.classList.remove('warning', 'critical');
+                addAlert('success', 'System returned to normal');  // ? also log recovery
+            }
         }
     }
-    
+
     if (timeEl) {
         timeEl.textContent = `Last check: ${new Date().toLocaleTimeString()}`;
     }
