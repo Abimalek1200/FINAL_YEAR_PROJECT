@@ -135,6 +135,12 @@ class HardwareController:
             self._set_pwm(pin, 0)
         self.pump_duty = 0.0
         self.motor_states = {k: 0.0 for k in self.motor_states}
+
+        # Force manual mode so the PI controller cannot resume on next tick
+        self.pump_mode = 'manual'
+        self.auto_state = 'ESTOP'
+        self.pi_integral = 0.0  # Clear integral to prevent burst when auto is re-entered
+        
         # update green LED (no pumps running)
         try:
             self._set_led('green', False)
