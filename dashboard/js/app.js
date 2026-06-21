@@ -145,21 +145,7 @@ function sendWebSocketMessage(data) {
 
 function initializeUI() {
     // Set default mode display
-    updateModeDisplay();
-
-    // Seed setpoint from backend (single source: config/control_config.json)
-    fetch('/api/status')
-        .then(r => r.json())
-        .then(data => {
-            const sp = data?.hardware_status?.pi_controller?.setpoint;
-            if (sp !== undefined) {
-                AppState.piController.setpoint = sp;
-                const el = document.getElementById('piSetpointDisplay');
-                if (el) el.textContent = String(sp);
-            }
-        })
-        .catch(() => {/* setpoint will be populated on first WebSocket control message */});
-    
+    updateModeDisplay();    
     // Initialize device controls
     updateDeviceUI('pump');
     updateDeviceUI('feed');
@@ -744,10 +730,25 @@ function updateMetrics(metrics) {
     // Pump duty (peristaltic frother) - read-only display in Auto mode
     if (metrics.pump_duty !== undefined) {
         const duty = Math.max(0, Math.min(100, Number(metrics.pump_duty) || 0));
+        const isRunning = duty > 0;
+
+        // Auto panel (read-only display)
         const autoSlider = document.getElementById('pumpSpeedAuto');
         const autoValue = document.getElementById('pumpSpeedValueAuto');
         if (autoSlider) autoSlider.value = String(duty);
         if (autoValue) autoValue.textContent = String(Math.round(duty));
+
+        // Manual panel � keeps all tabs in sync when duty changes on backend
+        const manualSlider = document.getElementById('pumpSpeed');
+        const manualValue = document.getElementById('pumpSpeedValue');
+        if (manualSlider) manualSlider.value = String(duty);
+        if (manualValue) manualValue.textContent = String(Math.round(duty));
+
+        // Keep AppState and derived display (flow rate) consistent
+        AppState.devices.pump.speed = duty;
+        AppState.devices.pump.running = isRunning;
+        updateDeviceUI('pump');
+        updateDeviceDerivedValues('pump', duty);
     }
 }
 
@@ -771,8 +772,7 @@ function updateControlState(data) {
         document.getElementById('piOutput').textContent = `${Math.round(Number(simoOutput) || 0)}%`;
     }
 
-    const setpoint = data?.hardware_status?.auto_control?.setpoint
-        ?? data?.hardware_status?.pi_controller?.setpoint;
+     const setpoint = data?.hardware_status?.pi_controller?.setpoint;
     if (setpoint !== undefined) {
         AppState.piController.setpoint = setpoint;
         const setpointEl = document.getElementById('piSetpointDisplay');
@@ -851,23 +851,28 @@ function handleAnomaly(data) {
     const timeEl = document.getElementById('anomalyTime');
 
     if (data.status) {
-        const previousStatus = AppState.metrics.anomalyStatus;   // ? read previous
-        AppState.metrics.anomalyStatus = data.status;             // ? update state
+        const previousStatus = AppState.metrics.anomalyStatus;
+        AppState.metrics.anomalyStatus = data.status;
 
         statusEl.textContent = data.status.toUpperCase();
-        statusEl.className = 'metric-value anomaly-status';
 
-        // Only add alert when status actually changes, not on every push
+        // Reset and unconditionally re-apply the correct colour on every push
+        statusEl.className = 'metric-value anomaly-status';
+        if (data.status === 'warning') {
+            statusEl.classList.add('warning');
+        } else if (data.status === 'critical') {
+            statusEl.classList.add('critical');
+        }
+        // 'normal' needs no extra class � default green is correct
+
+        // Alert log: only fire on status transition
         if (data.status !== previousStatus) {
             if (data.status === 'warning') {
-                statusEl.classList.add('warning');
                 addAlert('warning', data.message || 'Anomaly detected - Warning level');
             } else if (data.status === 'critical') {
-                statusEl.classList.add('critical');
                 addAlert('error', data.message || 'Anomaly detected - Critical level');
-            } else if (data.status === 'normal' && previousStatus !== 'normal') {
-                statusEl.classList.remove('warning', 'critical');
-                addAlert('success', 'System returned to normal');  // ? also log recovery
+            } else if (data.status === 'normal') {
+                addAlert('success', 'System returned to normal');
             }
         }
     }

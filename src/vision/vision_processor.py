@@ -373,7 +373,9 @@ class VisionProcessor:
             diameters = bubble_data['diameters']
             areas = bubble_data['areas']
             mask = bubble_data.get('mask')
-            coverage_mask = bubble_data.get('segmentation_mask') or bubble_data.get('mask')
+            coverage_mask = bubble_data.get('segmentation_mask')
+            if coverage_mask is None:
+                coverage_mask = bubble_data.get('mask')
 
             # Coverage ratio
             coverage = 0.0

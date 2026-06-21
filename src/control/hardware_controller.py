@@ -59,11 +59,11 @@ class HardwareController:
         self.min_active_duty = 2.0
         self.last_control_count = None
         self.auto_state = "MANUAL"
-        self.air_normal_duty = 65.0
-        self.air_min_duty = 55.0
+        self.air_normal_duty = 75.0
+        self.air_min_duty = 60.0
         self.air_reduce_start = 20.0
         self.air_full_reduce = 50.0
-        self.air_auto_duty = 65.0
+        self.air_auto_duty = 75.0
 
         self._initialize_gpio()
     

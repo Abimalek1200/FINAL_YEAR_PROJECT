@@ -2,7 +2,7 @@
   "pi_controller": {
     "kp": 1.0,
     "ki": 0.001,
-    "setpoint": 100
+    "setpoint": 70
   },
   "frother_pump": {
     "pin": 12,
